@@ -23,18 +23,28 @@ Export Markdown notes to beautifully styled PDFs with configurable themes: color
 
 ## Installation
 
-```bash
-# Copy the folder into your Obsidian vault
-cp -r obsidian-rhino-pdf-export /path/to/vault/.obsidian/plugins/rhino-pdf-export
-```
+### From Obsidian
 
-Then: Obsidian → Settings → Community plugins → enable "Rhino PDF Export".
+Settings → Community plugins → Browse → search "Rhino PDF Export" → Install → Enable. (waiting for validation on march 10th 2026)
+
+### Manual
+
+Download `main.js`, `manifest.json` and `styles.css` from the [latest release](https://github.com/DegunStudios/obsidian-rhino-pdf-export/releases/latest), then copy them into your vault at `.obsidian/plugins/rhino-pdf-export/`.
+
+### From source
+
+```bash
+git clone https://github.com/DegunStudios/obsidian-rhino-pdf-export.git
+cd obsidian-rhino-pdf-export
+npm install && npm run build
+cp main.js manifest.json styles.css /path/to/vault/.obsidian/plugins/rhino-pdf-export/
+```
 
 ## Usage
 
-- **Command palette**: `Rhino PDF: Export note`
-- **Right-click** on a `.md` file → `Rhino PDF: Export note`
-- **Right-click** on a folder → `Rhino PDF: Export folder`
+- **Command palette**: `Export note as PDF`
+- **Right-click** on a `.md` file → `Export note as PDF`
+- **Right-click** on a folder → `Export folder as PDF`
 
 The export modal shows a live PDF preview and lets you pick the theme, override subtitle and footer text, and choose the output location.
 
