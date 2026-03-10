@@ -1,4 +1,4 @@
-import { App, PluginSettingTab, Setting, TFile, Notice } from "obsidian";
+import { App, PluginSettingTab, Setting, Notice } from "obsidian";
 import type RhinoPdfExport from "./main";
 import type { PdfTheme } from "./types";
 import { BUILTIN_THEMES, createBlankTheme } from "./themes";
@@ -14,16 +14,17 @@ export class ThemedPdfSettingTab extends PluginSettingTab {
   display() {
     const { containerEl } = this;
     containerEl.empty();
-    containerEl.createEl("h2", { text: "Rhino PDF Export" });
+
+    new Setting(containerEl).setName("PDF export").setHeading();
 
     // --- Built-in themes ---
-    containerEl.createEl("h3", { text: "Built-in themes" });
+    new Setting(containerEl).setName("Built-in themes").setHeading();
     for (const theme of BUILTIN_THEMES) {
       this.renderThemeRow(containerEl, theme, true);
     }
 
     // --- Custom themes ---
-    containerEl.createEl("h3", { text: "Custom themes" });
+    new Setting(containerEl).setName("Custom themes").setHeading();
 
     if (this.plugin.settings.themes.length === 0) {
       containerEl.createEl("p", {
@@ -38,7 +39,7 @@ export class ThemedPdfSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .addButton((btn) => {
-        btn.setButtonText("+ New theme").onClick(async () => {
+        btn.setButtonText("New theme").onClick(async () => {
           const newTheme = createBlankTheme();
           this.plugin.settings.themes.push(newTheme);
           await this.plugin.saveSettings();
@@ -66,9 +67,10 @@ export class ThemedPdfSettingTab extends PluginSettingTab {
       );
 
     const colorPreview = createSpan({ cls: "theme-colors-preview" });
-    colorPreview.innerHTML = `
-      <span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:${theme.primaryColor};margin-right:4px;vertical-align:middle;"></span>
-      <span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:${theme.accentColor};vertical-align:middle;"></span>`;
+    const swatch1 = colorPreview.createSpan({ cls: "rhino-color-swatch" });
+    swatch1.setCssStyles({ backgroundColor: theme.primaryColor });
+    const swatch2 = colorPreview.createSpan({ cls: "rhino-color-swatch" });
+    swatch2.setCssStyles({ backgroundColor: theme.accentColor });
     row.nameEl.prepend(colorPreview);
 
     row.addButton((btn) => {
@@ -98,10 +100,11 @@ export class ThemedPdfSettingTab extends PluginSettingTab {
   private openThemeEditor(theme: PdfTheme) {
     const { containerEl } = this;
     containerEl.empty();
-    containerEl.createEl("h2", { text: `Edit: ${theme.name}` });
+
+    new Setting(containerEl).setName(`Edit: ${theme.name}`).setHeading();
 
     new Setting(containerEl).addButton((btn) => {
-      btn.setButtonText("← Back").onClick(() => this.display());
+      btn.setButtonText("Back").onClick(() => this.display());
     });
 
     new Setting(containerEl)
@@ -159,7 +162,7 @@ export class ThemedPdfSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Table of contents")
-      .setDesc("Auto-generated from H2/H3 headings, after cover page")
+      .setDesc("Auto-generated from h2/h3 headings, after the cover page")
       .addToggle((t) => {
         t.setValue(theme.showToc).onChange(async (v) => {
           theme.showToc = v;
@@ -168,8 +171,8 @@ export class ThemedPdfSettingTab extends PluginSettingTab {
       });
 
     new Setting(containerEl)
-      .setName("TOC title")
-      .setDesc("e.g. \"Table des matières\", \"Sommaire\"")
+      .setName("Table of contents title")
+      .setDesc("Heading displayed above the table of contents")
       .addText((t) => {
         t.setValue(theme.tocTitle).onChange(async (v) => {
           theme.tocTitle = v;
@@ -245,17 +248,17 @@ export class ThemedPdfSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Legal notice text")
+      .setClass("rhino-textarea-wide")
       .addTextArea((t) => {
         t.setValue(theme.legalText).onChange(async (v) => {
           theme.legalText = v;
           await this.plugin.saveSettings();
         });
         t.inputEl.rows = 6;
-        t.inputEl.style.width = "100%";
       });
 
     // Typography
-    containerEl.createEl("h3", { text: "Typography" });
+    new Setting(containerEl).setName("Typography").setHeading();
 
     new Setting(containerEl)
       .setName("Body font")
@@ -285,7 +288,7 @@ export class ThemedPdfSettingTab extends PluginSettingTab {
       });
 
     // Page layout
-    containerEl.createEl("h3", { text: "Page layout" });
+    new Setting(containerEl).setName("Page layout").setHeading();
 
     new Setting(containerEl)
       .setName("Page size")
@@ -313,6 +316,7 @@ export class ThemedPdfSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Margins (top, right, bottom, left)")
       .setDesc("CSS values, e.g. 25mm")
+      .setClass("rhino-margin-input")
       .addText((t) => {
         t.setValue(
           `${theme.margins.top}, ${theme.margins.right}, ${theme.margins.bottom}, ${theme.margins.left}`
@@ -328,12 +332,11 @@ export class ThemedPdfSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
           }
         });
-        t.inputEl.style.width = "250px";
       });
   }
 
   private exportThemeToJson(theme: PdfTheme) {
-    const exportData: Record<string, any> = { ...theme };
+    const exportData: Record<string, unknown> = { ...theme };
     delete exportData.builtin;
 
     const json = JSON.stringify(exportData, null, 2);
@@ -350,35 +353,38 @@ export class ThemedPdfSettingTab extends PluginSettingTab {
     const input = document.createElement("input");
     input.type = "file";
     input.accept = ".json";
-    input.addEventListener("change", async () => {
+    input.addEventListener("change", () => {
       const file = input.files?.[0];
       if (!file) return;
 
-      try {
-        const text = await file.text();
-        const data = JSON.parse(text);
+      void file.text().then((text) => {
+        try {
+          const data = JSON.parse(text) as Record<string, unknown>;
 
-        if (!data.name || !data.primaryColor) {
-          new Notice("Invalid JSON: 'name' and 'primaryColor' fields are required.");
-          return;
+          if (!data.name || !data.primaryColor) {
+            new Notice("Invalid theme JSON: missing name or primary color.");
+            return;
+          }
+
+          const blank = createBlankTheme();
+          const imported: PdfTheme = {
+            ...blank,
+            ...(data as Partial<PdfTheme>),
+            id: "custom-" + Date.now(),
+            margins: { ...blank.margins, ...((data.margins as Record<string, string>) || {}) },
+          };
+          delete (imported as Record<string, unknown>).builtin;
+
+          this.plugin.settings.themes.push(imported);
+          void this.plugin.saveSettings().then(() => {
+            this.display();
+            new Notice(`Theme "${imported.name}" imported.`);
+          });
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : String(err);
+          new Notice(`Import error: ${message}`);
         }
-
-        const blank = createBlankTheme();
-        const imported: PdfTheme = {
-          ...blank,
-          ...data,
-          id: "custom-" + Date.now(),
-          margins: { ...blank.margins, ...(data.margins || {}) },
-        };
-        delete (imported as any).builtin;
-
-        this.plugin.settings.themes.push(imported);
-        await this.plugin.saveSettings();
-        this.display();
-        new Notice(`Theme "${imported.name}" imported.`);
-      } catch (err: any) {
-        new Notice(`Import error: ${err.message}`);
-      }
+      });
     });
     input.click();
   }

@@ -630,7 +630,7 @@ function extractHeadings(bodyHtml: string, counterStart = 0): {
 } {
   const headings: { level: number; text: string; id: string }[] = [];
   let counter = counterStart;
-  const html = bodyHtml.replace(/<(h[23])([^>]*)>([\s\S]*?)<\/\1>/gi, (match, tag, attrs, content) => {
+  const html = bodyHtml.replace(/<(h[23])([^>]*)>([\s\S]*?)<\/\1>/gi, (_match: string, tag: string, attrs: string, content: string) => {
     const level = parseInt(tag[1]);
     const text = content.replace(/<[^>]+>/g, "").trim();
     const id = `toc-${counter++}`;
@@ -663,19 +663,19 @@ function buildTocHtml(headings: { level: number; text: string; id: string }[], t
  * This is needed because the HTML is loaded from a temp file outside the vault.
  */
 export function resolveImagePaths(html: string, vaultBasePath: string): string {
-  return html.replace(/<img([^>]*)\ssrc="([^"]+)"([^>]*)>/gi, (match, before, src, after) => {
+  return html.replace(/<img([^>]*)\ssrc="([^"]+)"([^>]*)>/gi, (match: string, before: string, src: string, after: string) => {
     // Skip data URIs and absolute URLs
     if (src.startsWith("data:") || src.startsWith("http://") || src.startsWith("https://") || src.startsWith("file://")) {
       return match;
     }
 
     // Strip Obsidian's app:// protocol
-    let resolvedPath = src;
+    let resolvedPath: string = src;
     if (src.startsWith("app://")) {
       // app://local/<absolute-path> or app://obsidian.md/<absolute-path>
-      const match2 = src.match(/^app:\/\/[^/]+(\/.+)$/);
-      if (match2) {
-        resolvedPath = decodeURIComponent(match2[1]);
+      const appMatch = src.match(/^app:\/\/[^/]+(\/.+)$/);
+      if (appMatch) {
+        resolvedPath = decodeURIComponent(appMatch[1]);
         return `<img${before} src="file://${resolvedPath}"${after}>`;
       }
     }

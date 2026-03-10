@@ -1,12 +1,10 @@
-import { Plugin, MarkdownView, TFile, TFolder, Notice } from "obsidian";
+import { Plugin, TFile, TFolder, Notice, FileSystemAdapter } from "obsidian";
 import type { PdfTheme, PluginSettings } from "./types";
 import { DEFAULT_SETTINGS } from "./types";
 import { ThemedPdfSettingTab } from "./settings";
 import { ExportModal } from "./modal";
 import { BatchExportModal } from "./batch";
 import { createBlankTheme } from "./themes";
-
-const THEMES_FILE = ".obsidian/rhino-pdf-themes.json";
 
 export default class RhinoPdfExport extends Plugin {
   settings: PluginSettings = DEFAULT_SETTINGS;
@@ -16,7 +14,7 @@ export default class RhinoPdfExport extends Plugin {
 
     this.addCommand({
       id: "export-themed-pdf",
-      name: "Rhino PDF: Export note",
+      name: "Export note as PDF",
       checkCallback: (checking: boolean) => {
         const file = this.app.workspace.getActiveFile();
         if (!file || file.extension !== "md") return false;
@@ -37,7 +35,7 @@ export default class RhinoPdfExport extends Plugin {
         if (file instanceof TFile && file.extension === "md") {
           menu.addItem((item) => {
             item
-              .setTitle("Rhino PDF: Export note")
+              .setTitle("Export note as PDF")
               .setIcon("file-down")
               .onClick(() => {
                 new ExportModal(
@@ -52,7 +50,7 @@ export default class RhinoPdfExport extends Plugin {
         if (file instanceof TFolder) {
           menu.addItem((item) => {
             item
-              .setTitle("Rhino PDF: Export folder")
+              .setTitle("Export folder as PDF")
               .setIcon("folder-down")
               .onClick(() => {
                 new BatchExportModal(
@@ -70,9 +68,21 @@ export default class RhinoPdfExport extends Plugin {
     this.addSettingTab(new ThemedPdfSettingTab(this.app, this));
   }
 
+  private get themesFilePath(): string {
+    return `${this.app.vault.configDir}/rhino-pdf-themes.json`;
+  }
+
+  getVaultBasePath(): string {
+    const adapter = this.app.vault.adapter;
+    if (adapter instanceof FileSystemAdapter) {
+      return adapter.getBasePath();
+    }
+    return "";
+  }
+
   async loadSettings() {
-    const saved = await this.loadData();
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, saved);
+    const saved = (await this.loadData()) as Partial<PluginSettings> | undefined;
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, saved ?? {});
 
     // Load custom themes from separate file (survives plugin updates)
     const themes = await this.loadThemesFile();
@@ -99,13 +109,13 @@ export default class RhinoPdfExport extends Plugin {
 
   private async loadThemesFile(): Promise<PdfTheme[]> {
     try {
-      const adapter = this.app.vault.adapter as any;
-      if (await adapter.exists(THEMES_FILE)) {
-        const raw = await adapter.read(THEMES_FILE);
-        const data = JSON.parse(raw);
-        if (Array.isArray(data)) return data;
+      const adapter = this.app.vault.adapter;
+      if (await adapter.exists(this.themesFilePath)) {
+        const raw = await adapter.read(this.themesFilePath);
+        const data = JSON.parse(raw) as unknown;
+        if (Array.isArray(data)) return data as PdfTheme[];
       }
-    } catch (err) {
+    } catch (err: unknown) {
       console.error("[Rhino PDF] Failed to load themes file:", err);
     }
     return [];
@@ -113,9 +123,9 @@ export default class RhinoPdfExport extends Plugin {
 
   private async saveThemesFile(themes: PdfTheme[]): Promise<void> {
     try {
-      const adapter = this.app.vault.adapter as any;
-      await adapter.write(THEMES_FILE, JSON.stringify(themes, null, 2));
-    } catch (err) {
+      const adapter = this.app.vault.adapter;
+      await adapter.write(this.themesFilePath, JSON.stringify(themes, null, 2));
+    } catch (err: unknown) {
       console.error("[Rhino PDF] Failed to save themes file:", err);
     }
   }
@@ -124,23 +134,24 @@ export default class RhinoPdfExport extends Plugin {
     const OLD_PLUGIN_IDS = ["themed-pdf-export"];
     for (const oldId of OLD_PLUGIN_IDS) {
       try {
-        const adapter = this.app.vault.adapter as any;
-        const oldDataPath = `.obsidian/plugins/${oldId}/data.json`;
+        const adapter = this.app.vault.adapter;
+        const oldDataPath = `${this.app.vault.configDir}/plugins/${oldId}/data.json`;
         if (await adapter.exists(oldDataPath)) {
           const raw = await adapter.read(oldDataPath);
-          const oldData = JSON.parse(raw);
-          if (oldData.themes && oldData.themes.length > 0) {
-            this.settings.themes = oldData.themes;
+          const oldData = JSON.parse(raw) as Record<string, unknown>;
+          const oldThemes = oldData.themes as PdfTheme[] | undefined;
+          if (oldThemes && oldThemes.length > 0) {
+            this.settings.themes = oldThemes;
             if (oldData.lastUsedThemeId) {
-              this.settings.lastUsedThemeId = oldData.lastUsedThemeId;
+              this.settings.lastUsedThemeId = oldData.lastUsedThemeId as string;
             }
-            await this.saveThemesFile(oldData.themes);
+            await this.saveThemesFile(oldThemes);
             await this.saveData(this.settings);
-            new Notice(`Rhino PDF: migrated ${oldData.themes.length} theme(s) from previous plugin version.`);
+            new Notice(`Rhino PDF: migrated ${oldThemes.length} theme(s) from previous plugin version.`);
             break;
           }
         }
-      } catch (err) {
+      } catch (err: unknown) {
         console.error(`[Rhino PDF] Migration error for plugin "${oldId}":`, err);
       }
     }

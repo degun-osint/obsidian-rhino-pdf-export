@@ -7,6 +7,7 @@ import {
   TFolder,
   Notice,
   Component,
+  FileSystemAdapter,
 } from "obsidian";
 import type { PdfTheme, PluginSettings } from "./types";
 import { BUILTIN_THEMES } from "./themes";
@@ -16,10 +17,13 @@ import { parseThemeOverrides, applyThemeOverrides } from "./frontmatter";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+import type { ElectronRemote } from "electron";
+import electron from "electron";
 
-function getElectronRemote(): any {
-  const electron = require("electron");
-  return electron.remote || (require("@electron/remote") ?? electron);
+function getElectronRemote(): ElectronRemote {
+  const remote = electron.remote;
+  if (remote) return remote;
+  return electron as unknown as ElectronRemote;
 }
 
 export class BatchExportModal extends Modal {
@@ -58,8 +62,9 @@ export class BatchExportModal extends Modal {
 
     const mdFiles = this.getMdFiles();
 
-    contentEl.createEl("h2", { text: "Rhino PDF: Batch Export" });
-    contentEl.createEl("p", {
+    new Setting(contentEl).setName("Batch export").setHeading();
+
+    const descEl = contentEl.createEl("p", {
       text: `${mdFiles.length} note${mdFiles.length > 1 ? "s" : ""} in "${this.folder.path || "/"}"`,
       cls: "setting-item-description",
     });
@@ -69,11 +74,11 @@ export class BatchExportModal extends Modal {
     new Setting(contentEl)
       .setName("Theme")
       .addDropdown((dd) => {
-        allThemes.forEach((t) => dd.addOption(t.id, t.name));
+        for (const t of allThemes) dd.addOption(t.id, t.name);
         dd.setValue(this.selectedTheme.id);
-        dd.onChange(async (val) => {
+        dd.onChange((val) => {
           this.selectedTheme = allThemes.find((t) => t.id === val) || allThemes[0];
-          await this.updatePreview(mdFiles);
+          void this.updatePreview(mdFiles);
         });
       });
 
@@ -92,15 +97,11 @@ export class BatchExportModal extends Modal {
       .setDesc("Recursively include notes from subfolders")
       .addToggle((toggle) => {
         toggle.setValue(this.recursive);
-        toggle.onChange(async (val) => {
+        toggle.onChange((val) => {
           this.recursive = val;
           const files = this.getMdFiles();
-          // Update file count
-          const desc = contentEl.querySelector(".setting-item-description");
-          if (desc) {
-            desc.textContent = `${files.length} note${files.length > 1 ? "s" : ""} in "${this.folder.path || "/"}"`;
-          }
-          await this.updatePreview(files);
+          descEl.textContent = `${files.length} note${files.length > 1 ? "s" : ""} in "${this.folder.path || "/"}"`;
+          void this.updatePreview(files);
         });
       });
 
@@ -110,9 +111,9 @@ export class BatchExportModal extends Modal {
       .addText((t) => {
         t.setPlaceholder(this.selectedTheme.subtitle || "(theme default)")
           .setValue(this.overrideSubtitle)
-          .onChange(async (v) => {
+          .onChange((v) => {
             this.overrideSubtitle = v;
-            await this.updatePreview(mdFiles);
+            void this.updatePreview(mdFiles);
           });
       });
 
@@ -122,29 +123,21 @@ export class BatchExportModal extends Modal {
       .addText((t) => {
         t.setPlaceholder(this.selectedTheme.footerText || "(theme default)")
           .setValue(this.overrideFooterText)
-          .onChange(async (v) => {
+          .onChange((v) => {
             this.overrideFooterText = v;
-            await this.updatePreview(mdFiles);
+            void this.updatePreview(mdFiles);
           });
       });
 
     // Preview container
     const previewContainer = contentEl.createDiv("pdf-preview-container");
-    previewContainer.style.cssText =
-      "width:100%;height:300px;border:1px solid var(--background-modifier-border);border-radius:8px;overflow:hidden;margin:12px 0;background:var(--background-secondary);position:relative;";
-
-    const loadingEl = previewContainer.createDiv("pdf-preview-loading");
-    loadingEl.style.cssText =
-      "position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:13px;";
-    loadingEl.textContent = "Loading preview (1st note)…";
+    previewContainer.addClass("is-short");
+    previewContainer.createDiv("pdf-preview-loading").textContent = "Loading preview (1st note)…";
 
     // Progress bar
     const progressEl = contentEl.createDiv("batch-progress");
-    progressEl.style.cssText = "margin:12px 0;display:none;";
     const progressBar = progressEl.createEl("progress");
-    progressBar.style.cssText = "width:100%;height:6px;";
-    const progressText = progressEl.createDiv();
-    progressText.style.cssText = "font-size:12px;color:var(--text-muted);margin-top:4px;";
+    const progressText = progressEl.createDiv("batch-progress-text");
 
     new Setting(contentEl).addButton((btn) => {
       btn.setButtonText(`Export ${mdFiles.length} notes`).setCta().onClick(async () => {
@@ -169,7 +162,7 @@ export class BatchExportModal extends Modal {
     });
 
     // Init preview with first file
-    this.initPreview(previewContainer, mdFiles);
+    void this.initPreview(previewContainer, mdFiles);
   }
 
   onClose() {
@@ -177,11 +170,19 @@ export class BatchExportModal extends Modal {
     this.contentEl.empty();
   }
 
+  private getVaultBasePath(): string {
+    const adapter = this.app.vault.adapter;
+    if (adapter instanceof FileSystemAdapter) {
+      return adapter.getBasePath();
+    }
+    return "";
+  }
+
   private async initPreview(container: HTMLElement, mdFiles: TFile[]) {
     if (mdFiles.length === 0) return;
 
-    const webview = document.createElement("webview") as any;
-    webview.setAttribute("style", "width:100%;height:100%;border:none;");
+    const webview = document.createElement("webview");
+    webview.addClass("rhino-webview");
     webview.setAttribute("webpreferences", "javascript=yes");
     this.previewWebview = webview;
     container.empty();
@@ -211,7 +212,7 @@ export class BatchExportModal extends Modal {
     const component = new Component();
     component.load();
     await MarkdownRenderer.render(this.app, mdContent, tempDiv, firstFile.path, component);
-    const vaultBasePath = (this.app.vault.adapter as any).getBasePath();
+    const vaultBasePath = this.getVaultBasePath();
     const bodyHtml = resolveImagePaths(tempDiv.innerHTML, vaultBasePath);
     component.unload();
 
@@ -223,12 +224,12 @@ export class BatchExportModal extends Modal {
     fs.writeFileSync(tempFile, html, "utf-8");
     this.previewTempFile = tempFile;
 
-    (this.previewWebview as any).setAttribute("src", `file://${tempFile}`);
+    this.previewWebview.setAttribute("src", `file://${tempFile}`);
   }
 
   private cleanupPreviewFile() {
     if (this.previewTempFile) {
-      try { fs.unlinkSync(this.previewTempFile); } catch (_) {}
+      try { fs.unlinkSync(this.previewTempFile); } catch { /* cleanup non-critical */ }
       this.previewTempFile = null;
     }
   }
@@ -253,14 +254,14 @@ export class BatchExportModal extends Modal {
     progressText: HTMLElement
   ) {
     const result = await getElectronRemote().dialog.showOpenDialog({
-      defaultPath: (this.app.vault.adapter as any).getBasePath(),
+      defaultPath: this.getVaultBasePath(),
       properties: ["openDirectory", "createDirectory"],
       title: "Choose output folder for PDFs",
     });
     if (result.canceled || !result.filePaths.length) return;
     const outputDir = result.filePaths[0];
 
-    progressEl.style.display = "block";
+    progressEl.addClass("is-active");
     progressBar.max = mdFiles.length;
 
     let success = 0;
@@ -274,7 +275,7 @@ export class BatchExportModal extends Modal {
       try {
         await this.exportFile(file, outputDir);
         success++;
-      } catch (err: any) {
+      } catch (err: unknown) {
         errors++;
         console.error(`Rhino PDF: export error ${file.path}:`, err);
       }
@@ -295,7 +296,7 @@ export class BatchExportModal extends Modal {
   ) {
     const folderName = this.folder.name || "vault";
     const defaultPath = path.join(
-      (this.app.vault.adapter as any).getBasePath(),
+      this.getVaultBasePath(),
       `${folderName}.pdf`
     );
     const result = await getElectronRemote().dialog.showSaveDialog({
@@ -304,7 +305,7 @@ export class BatchExportModal extends Modal {
     });
     if (result.canceled || !result.filePath) return;
 
-    progressEl.style.display = "block";
+    progressEl.addClass("is-active");
     progressBar.max = mdFiles.length;
 
     const theme = this.getEffectiveTheme();
@@ -332,12 +333,12 @@ export class BatchExportModal extends Modal {
         const component = new Component();
         component.load();
         await MarkdownRenderer.render(this.app, mdContent, tempDiv, file.path, component);
-        const vaultBase = (this.app.vault.adapter as any).getBasePath();
+        const vaultBase = this.getVaultBasePath();
         const bodyHtml = resolveImagePaths(tempDiv.innerHTML, vaultBase);
         component.unload();
 
         sections.push({ title, bodyHtml });
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error(`Rhino PDF: render error ${file.path}:`, err);
       }
     }
@@ -402,8 +403,8 @@ export class BatchExportModal extends Modal {
     const component = new Component();
     component.load();
     await MarkdownRenderer.render(this.app, mdContent, tempDiv, file.path, component);
-    const vaultBase2 = (this.app.vault.adapter as any).getBasePath();
-    const bodyHtml = resolveImagePaths(tempDiv.innerHTML, vaultBase2);
+    const vaultBase = this.getVaultBasePath();
+    const bodyHtml = resolveImagePaths(tempDiv.innerHTML, vaultBase);
     component.unload();
 
     let logoDataUri = "";

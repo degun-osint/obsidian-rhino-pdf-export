@@ -2,6 +2,14 @@ import { Notice } from "obsidian";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+import type { ElectronRemote, WebContents } from "electron";
+import electron from "electron";
+
+function getElectronRemote(): ElectronRemote {
+  const remote = electron.remote;
+  if (remote) return remote;
+  return electron as unknown as ElectronRemote;
+}
 
 /**
  * Generate a PDF from HTML using an Electron BrowserWindow + paged.js.
@@ -15,12 +23,8 @@ export async function generatePdf(
   const tempFile = path.join(tempDir, `rhino-pdf-export-${Date.now()}.html`);
   fs.writeFileSync(tempFile, html, "utf-8");
 
-  // Use Electron BrowserWindow instead of <webview> tag for reliable printToPDF
-  const electron = require("electron");
-  const remote = electron.remote || (require("@electron/remote") ?? electron);
-  const BrowserWindow = remote.BrowserWindow;
-
-  const win = new BrowserWindow({
+  const remote = getElectronRemote();
+  const win = new remote.BrowserWindow({
     show: false,
     width: 800,
     height: 600,
@@ -53,11 +57,11 @@ export async function generatePdf(
     fs.writeFileSync(outputPath, Buffer.from(pdfData));
   } finally {
     win.destroy();
-    try { fs.unlinkSync(tempFile); } catch (_) {}
+    try { fs.unlinkSync(tempFile); } catch { /* cleanup non-critical */ }
   }
 }
 
-async function waitForPagedJs(webContents: any, maxMs = 20000): Promise<void> {
+async function waitForPagedJs(webContents: WebContents, maxMs = 20000): Promise<void> {
   const start = Date.now();
   while (Date.now() - start < maxMs) {
     const title = await webContents.executeJavaScript("document.title");

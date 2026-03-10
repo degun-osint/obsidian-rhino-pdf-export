@@ -23,24 +23,26 @@ export function parseThemeOverrides(mdContent: string): Partial<PdfTheme> | null
  * Returns a new theme (does not mutate the original).
  */
 export function applyThemeOverrides(theme: PdfTheme, overrides: Partial<PdfTheme>): PdfTheme {
-  const result = { ...theme };
+  const result: Record<string, unknown> = { ...theme };
 
   for (const [key, value] of Object.entries(overrides)) {
     if (key === "margins" && typeof value === "object" && value !== null) {
-      result.margins = { ...result.margins, ...(value as any) };
+      result.margins = { ...theme.margins, ...(value as Record<string, string>) };
     } else if (key in result) {
-      (result as any)[key] = value;
+      result[key] = value;
     }
   }
 
-  return result;
+  return result as unknown as PdfTheme;
 }
 
 // --- Minimal YAML parser for the rhino-pdf key ---
 
+type YamlValue = string | number | boolean;
+
 function parseRhinoPdfBlock(yaml: string): Partial<PdfTheme> | null {
   const lines = yaml.split("\n");
-  const result: Record<string, any> = {};
+  const result: Record<string, YamlValue | Record<string, string>> = {};
   let inBlock = false;
   let inMargins = false;
   const margins: Record<string, string> = {};
@@ -71,7 +73,7 @@ function parseRhinoPdfBlock(yaml: string): Partial<PdfTheme> | null {
       if (inMargins) {
         const marginMatch = trimmed.match(/^\s{4,}(\w+)\s*:\s*(.+)/);
         if (marginMatch) {
-          margins[marginMatch[1]] = parseYamlValue(marginMatch[2]);
+          margins[marginMatch[1]] = String(parseYamlValue(marginMatch[2]));
           continue;
         } else if (/^\s{2,3}\S/.test(trimmed)) {
           inMargins = false;
@@ -91,10 +93,10 @@ function parseRhinoPdfBlock(yaml: string): Partial<PdfTheme> | null {
     result.margins = margins;
   }
 
-  return Object.keys(result).length > 0 ? result : null;
+  return Object.keys(result).length > 0 ? (result as unknown as Partial<PdfTheme>) : null;
 }
 
-function parseYamlValue(raw: string): any {
+function parseYamlValue(raw: string): YamlValue {
   const trimmed = raw.trim();
 
   if (trimmed === "true") return true;

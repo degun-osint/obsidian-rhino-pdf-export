@@ -6,6 +6,7 @@ import {
   TFile,
   Notice,
   Component,
+  FileSystemAdapter,
 } from "obsidian";
 import type { PdfTheme, PluginSettings } from "./types";
 import { BUILTIN_THEMES } from "./themes";
@@ -15,10 +16,13 @@ import { parseThemeOverrides, applyThemeOverrides } from "./frontmatter";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+import type { ElectronRemote } from "electron";
+import electron from "electron";
 
-function getElectronRemote(): any {
-  const electron = require("electron");
-  return electron.remote || (require("@electron/remote") ?? electron);
+function getElectronRemote(): ElectronRemote {
+  const remote = electron.remote;
+  if (remote) return remote;
+  return electron as unknown as ElectronRemote;
 }
 
 export class ExportModal extends Modal {
@@ -55,7 +59,8 @@ export class ExportModal extends Modal {
   onOpen() {
     const { contentEl } = this;
     contentEl.addClass("rhino-pdf-export-modal");
-    contentEl.createEl("h2", { text: "PDF Export" });
+
+    new Setting(contentEl).setName("PDF export").setHeading();
 
     const allThemes = [...BUILTIN_THEMES, ...this.settings.themes];
 
@@ -63,11 +68,11 @@ export class ExportModal extends Modal {
       .setName("Theme")
       .setDesc("Select the theme for export")
       .addDropdown((dd) => {
-        allThemes.forEach((t) => dd.addOption(t.id, t.name));
+        for (const t of allThemes) dd.addOption(t.id, t.name);
         dd.setValue(this.selectedTheme.id);
-        dd.onChange(async (val) => {
+        dd.onChange((val) => {
           this.selectedTheme = allThemes.find((t) => t.id === val) || allThemes[0];
-          await this.updatePreview();
+          void this.updatePreview();
         });
       });
 
@@ -77,9 +82,9 @@ export class ExportModal extends Modal {
       .addText((t) => {
         t.setPlaceholder(this.selectedTheme.subtitle || "(theme default)")
           .setValue(this.overrideSubtitle)
-          .onChange(async (v) => {
+          .onChange((v) => {
             this.overrideSubtitle = v;
-            await this.updatePreview();
+            void this.updatePreview();
           });
       });
 
@@ -89,21 +94,15 @@ export class ExportModal extends Modal {
       .addText((t) => {
         t.setPlaceholder(this.selectedTheme.footerText || "(theme default)")
           .setValue(this.overrideFooterText)
-          .onChange(async (v) => {
+          .onChange((v) => {
             this.overrideFooterText = v;
-            await this.updatePreview();
+            void this.updatePreview();
           });
       });
 
     // PDF preview container
     const previewContainer = contentEl.createDiv("pdf-preview-container");
-    previewContainer.style.cssText =
-      "width:100%;height:400px;border:1px solid var(--background-modifier-border);border-radius:8px;overflow:hidden;margin:12px 0;background:var(--background-secondary);position:relative;";
-
-    const loadingEl = previewContainer.createDiv("pdf-preview-loading");
-    loadingEl.style.cssText =
-      "position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:13px;";
-    loadingEl.textContent = "Loading preview…";
+    previewContainer.createDiv("pdf-preview-loading").textContent = "Loading preview…";
 
     new Setting(contentEl).addButton((btn) => {
       btn.setButtonText("Export").setCta().onClick(async () => {
@@ -112,9 +111,10 @@ export class ExportModal extends Modal {
         try {
           await this.doExport();
           this.close();
-        } catch (err: any) {
-          if (err.message !== "cancelled") {
-            new Notice(`Export error: ${err.message}`);
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : String(err);
+          if (message !== "cancelled") {
+            new Notice(`Export error: ${message}`);
           }
           btn.setDisabled(false);
           btn.setButtonText("Export");
@@ -122,7 +122,7 @@ export class ExportModal extends Modal {
       });
     });
 
-    this.initPreview(previewContainer);
+    void this.initPreview(previewContainer);
   }
 
   onClose() {
@@ -130,10 +130,18 @@ export class ExportModal extends Modal {
     this.contentEl.empty();
   }
 
+  private getVaultBasePath(): string {
+    const adapter = this.app.vault.adapter;
+    if (adapter instanceof FileSystemAdapter) {
+      return adapter.getBasePath();
+    }
+    return "";
+  }
+
   private async initPreview(container: HTMLElement) {
     await this.prepareContent();
-    const webview = document.createElement("webview") as any;
-    webview.setAttribute("style", "width:100%;height:100%;border:none;");
+    const webview = document.createElement("webview");
+    webview.addClass("rhino-webview");
     webview.setAttribute("webpreferences", "javascript=yes");
     this.previewWebview = webview;
     container.empty();
@@ -167,7 +175,7 @@ export class ExportModal extends Modal {
       this.file.path,
       component
     );
-    const vaultBasePath = (this.app.vault.adapter as any).getBasePath();
+    const vaultBasePath = this.getVaultBasePath();
     this.cachedBodyHtml = resolveImagePaths(tempDiv.innerHTML, vaultBasePath);
     component.unload();
   }
@@ -197,23 +205,23 @@ export class ExportModal extends Modal {
   }
 
   private async updatePreview() {
-    if (!this.previewWebview || this.cachedBodyHtml === null) return;
+    if (!this.previewWebview || this.cachedBodyHtml === null || this.cachedTitle === null) return;
 
     const theme = this.getEffectiveTheme();
     const logoDataUri = await this.getLogoDataUri(theme.logoPath);
-    const html = buildHtml(this.cachedBodyHtml!, this.cachedTitle!, theme, logoDataUri);
+    const html = buildHtml(this.cachedBodyHtml, this.cachedTitle, theme, logoDataUri);
 
     this.cleanupPreviewFile();
     const tempFile = path.join(os.tmpdir(), `rhino-preview-${Date.now()}.html`);
     fs.writeFileSync(tempFile, html, "utf-8");
     this.previewTempFile = tempFile;
 
-    (this.previewWebview as any).setAttribute("src", `file://${tempFile}`);
+    this.previewWebview.setAttribute("src", `file://${tempFile}`);
   }
 
   private cleanupPreviewFile() {
     if (this.previewTempFile) {
-      try { fs.unlinkSync(this.previewTempFile); } catch (_) {}
+      try { fs.unlinkSync(this.previewTempFile); } catch { /* cleanup non-critical */ }
       this.previewTempFile = null;
     }
   }
@@ -230,7 +238,7 @@ export class ExportModal extends Modal {
     await this.prepareContent();
 
     // Native save dialog
-    const vaultBasePath = (this.app.vault.adapter as any).getBasePath();
+    const vaultBasePath = this.getVaultBasePath();
     const noteDir = this.file.parent?.path || "";
     const defaultPath = path.join(vaultBasePath, noteDir, this.file.basename + ".pdf");
 
