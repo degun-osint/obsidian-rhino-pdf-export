@@ -1,0 +1,56 @@
+import type { PdfTheme } from "./types";
+
+export const BUILTIN_THEMES: PdfTheme[] = [
+  {
+    id: "minimal",
+    name: "Minimal",
+    builtin: true,
+    primaryColor: "#222222",
+    accentColor: "#555555",
+    logoPath: "",
+    showCover: false,
+    showToc: false,
+    tocTitle: "Table of Contents",
+    subtitle: "",
+    showHeaderLogo: false,
+    headerLogoHeight: "10mm",
+    showPagination: true,
+    footerText: "",
+    showLegal: false,
+    legalTitle: "",
+    legalText: "",
+    bodyFont: "'Georgia', 'Times New Roman', serif",
+    codeFont: "'SF Mono', 'Fira Code', monospace",
+    bodyFontSize: "11pt",
+    pageSize: "A4",
+    orientation: "portrait",
+    margins: { top: "20mm", right: "20mm", bottom: "20mm", left: "20mm" },
+  },
+];
+
+export function createBlankTheme(): PdfTheme {
+  return {
+    id: "custom-" + Date.now(),
+    name: "New theme",
+    primaryColor: "#333333",
+    accentColor: "#666666",
+    logoPath: "",
+    showCover: true,
+    showToc: false,
+    tocTitle: "Table of Contents",
+    subtitle: "",
+    showHeaderLogo: false,
+    headerLogoHeight: "12mm",
+    showPagination: true,
+    footerText: "",
+    showLegal: false,
+    legalTitle: "",
+    legalText: "",
+    bodyFont: "'Inter', sans-serif",
+    codeFont: "'JetBrains Mono', monospace",
+    bodyFontSize: "10pt",
+    pageSize: "A4",
+    orientation: "portrait",
+    margins: { top: "25mm", right: "20mm", bottom: "25mm", left: "20mm" },
+  };
+}

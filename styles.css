@@ -1,0 +1,17 @@
+/* Export modal */
+.rhino-pdf-export-modal {
+  max-width: 520px;
+}
+
+.rhino-pdf-export-modal h2 {
+  margin-bottom: 16px;
+}
+
+.rhino-pdf-export-modal .theme-preview {
+  margin-bottom: 12px;
+}
+
+/* Settings: color preview */
+.theme-colors-preview {
+  margin-right: 8px;
+}

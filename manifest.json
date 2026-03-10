@@ -1,0 +1,11 @@
+{
+  "id": "rhino-pdf-export",
+  "name": "Rhino PDF Export",
+  "version": "0.1.0",
+  "minAppVersion": "1.4.0",
+  "description": "Export notes as styled PDF with configurable themes, logos, headers/footers, and legal notices.",
+  "author": "Degun",
+  "authorUrl": "https://github.com/degun-osint",
+  "isDesktopOnly": true,
+  "fundingUrl": "https://ko-fi.com/degun"
+}
