@@ -14,6 +14,9 @@ function buildCss(theme: PdfTheme): string {
 @page {
   size: ${theme.pageSize}${theme.orientation === "landscape" ? " landscape" : ""};
   margin: ${m.top} ${m.right} ${m.bottom} ${m.left};
+  @top-left {
+    content: element(headertext);
+  }
   @top-right {
     content: element(headerlogo);
   }
@@ -24,6 +27,7 @@ function buildCss(theme: PdfTheme): string {
 
 @page :first {
   margin-top: 15mm;
+  @top-left { content: none; }
   @top-right { content: none; }
   @bottom-center { content: none; }
 }
@@ -38,7 +42,15 @@ body {
   background: #ffffff;
 }
 
-/* --- Running header: logo --- */
+/* --- Running header: text (left) --- */
+.running-header-text {
+  position: running(headertext);
+  font-family: ${theme.bodyFont};
+  font-size: 9px;
+  color: #999;
+}
+
+/* --- Running header: logo (right) --- */
 .running-header-logo {
   position: running(headerlogo);
 }
@@ -360,6 +372,24 @@ strong { font-weight: 700; color: #1a1a1a; }
   text-align: center;
   margin-bottom: 2mm;
 }
+${theme.watermarkText ? `
+/* --- Watermark --- */
+.rhino-watermark {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(${theme.watermarkRotation}deg);
+  font-size: ${theme.watermarkFontSize};
+  color: ${theme.watermarkColor};
+  opacity: ${theme.watermarkOpacity};
+  pointer-events: none;
+  z-index: 1000;
+  white-space: nowrap;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+` : ""}
 `;
 }
 
@@ -377,11 +407,14 @@ export function buildHtml(
     ? `<img src="${logoDataUri}" alt="Logo">`
     : "";
 
-  // Running header (logo, page 2+)
+  // Running header (logo + text, page 2+)
   const headerLogo =
     theme.showHeaderLogo && logoDataUri
       ? `<div class="running-header-logo">${logoImg}</div>`
       : "";
+  const headerText = theme.headerText
+    ? `<div class="running-header-text">${escapeHtml(resolveTextVariables(theme.headerText, title))}</div>`
+    : "";
 
   // Running footer (pagination via paged.js CSS counters)
   let footerContent = "";
@@ -389,9 +422,10 @@ export function buildHtml(
     footerContent = '<span class="page-num"></span> / <span class="page-total"></span>';
   }
   if (theme.footerText) {
+    const resolvedFooter = escapeHtml(resolveTextVariables(theme.footerText, title));
     footerContent += footerContent
-      ? ` — ${escapeHtml(theme.footerText)}`
-      : escapeHtml(theme.footerText);
+      ? ` — ${resolvedFooter}`
+      : resolvedFooter;
   }
   const footer = footerContent
     ? `<div class="running-footer">${footerContent}</div>`
@@ -447,7 +481,7 @@ export function buildHtml(
     };
     window.PagedConfig = {
       auto: true,
-      after: function() {
+      after: function() {${buildOutlineScript()}${buildWatermarkScript(theme)}
         document.title = "PAGED_READY";
       }
     };
@@ -468,6 +502,7 @@ export function buildHtml(
   </script>
 </head>
 <body>
+  ${headerText}
   ${headerLogo}
   ${footer}
   ${cover}
@@ -492,11 +527,14 @@ export function buildMergedHtml(
     ? `<img src="${logoDataUri}" alt="Logo">`
     : "";
 
-  // Running header (logo, page 2+)
+  // Running header (logo + text, page 2+)
   const headerLogo =
     theme.showHeaderLogo && logoDataUri
       ? `<div class="running-header-logo">${logoImg}</div>`
       : "";
+  const headerText = theme.headerText
+    ? `<div class="running-header-text">${escapeHtml(resolveTextVariables(theme.headerText, mergedTitle))}</div>`
+    : "";
 
   // Running footer (pagination via paged.js CSS counters)
   let footerContent = "";
@@ -504,9 +542,10 @@ export function buildMergedHtml(
     footerContent = '<span class="page-num"></span> / <span class="page-total"></span>';
   }
   if (theme.footerText) {
+    const resolvedFooter = escapeHtml(resolveTextVariables(theme.footerText, mergedTitle));
     footerContent += footerContent
-      ? ` — ${escapeHtml(theme.footerText)}`
-      : escapeHtml(theme.footerText);
+      ? ` — ${resolvedFooter}`
+      : resolvedFooter;
   }
   const footer = footerContent
     ? `<div class="running-footer">${footerContent}</div>`
@@ -588,7 +627,7 @@ export function buildMergedHtml(
     };
     window.PagedConfig = {
       auto: true,
-      after: function() {
+      after: function() {${buildOutlineScript()}${buildWatermarkScript(theme)}
         document.title = "PAGED_READY";
       }
     };
@@ -609,6 +648,7 @@ export function buildMergedHtml(
   </script>
 </head>
 <body>
+  ${headerText}
   ${headerLogo}
   ${footer}
   ${cover}
@@ -690,6 +730,55 @@ export function resolveImagePaths(html: string, vaultBasePath: string): string {
     const absolutePath = vaultBasePath + "/" + resolvedPath;
     return `<img${before} src="file://${encodeURI(absolutePath).replace(/#/g, "%23")}"${after}>`;
   });
+}
+
+/**
+ * Build JS snippet that injects watermark divs into each paged.js page.
+ * Returns empty string if no watermark is configured.
+ */
+/**
+ * Build JS snippet that collects heading positions for PDF bookmarks.
+ * Stores [{title, level, page}] in window.__rhinoOutline.
+ */
+function buildOutlineScript(): string {
+  return `
+        window.__rhinoOutline = [];
+        var headings = document.querySelectorAll("h1, h2, h3");
+        for (var i = 0; i < headings.length; i++) {
+          var h = headings[i];
+          var page = h.closest(".pagedjs_page");
+          if (page) {
+            var pageNum = parseInt(page.getAttribute("data-page-number") || "0");
+            window.__rhinoOutline.push({
+              title: h.textContent || "",
+              level: parseInt(h.tagName[1]),
+              page: pageNum
+            });
+          }
+        }`;
+}
+
+function buildWatermarkScript(theme: PdfTheme): string {
+  if (!theme.watermarkText) return "";
+  const text = theme.watermarkText.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  return `
+        var boxes = document.querySelectorAll(".pagedjs_pagebox");
+        for (var i = 0; i < boxes.length; i++) {
+          boxes[i].style.position = "relative";
+          var wm = document.createElement("div");
+          wm.className = "rhino-watermark";
+          wm.textContent = '${text}';
+          boxes[i].appendChild(wm);
+        }`;
+}
+
+/**
+ * Replace {title} and {date} placeholders in header/footer text.
+ */
+function resolveTextVariables(text: string, title: string): string {
+  return text
+    .replace(/\{title\}/gi, title)
+    .replace(/\{date\}/gi, new Date().toLocaleDateString());
 }
 
 function escapeHtml(str: string): string {

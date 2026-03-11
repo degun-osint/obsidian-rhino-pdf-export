@@ -208,6 +208,18 @@ export class ThemedPdfSettingTab extends PluginSettingTab {
         });
       });
 
+    new Setting(containerEl)
+      .setName("Header text")
+      .setDesc("Supports {title} and {date}")
+      .addText((t) => {
+        t.setPlaceholder("{title}")
+          .setValue(theme.headerText)
+          .onChange(async (v) => {
+            theme.headerText = v;
+            await this.plugin.saveSettings();
+          });
+      });
+
     // Footer
     new Setting(containerEl)
       .setName("Pagination")
@@ -220,6 +232,7 @@ export class ThemedPdfSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Footer text")
+      .setDesc("Supports {title} and {date}")
       .addText((t) => {
         t.setValue(theme.footerText).onChange(async (v) => {
           theme.footerText = v;
@@ -255,6 +268,66 @@ export class ThemedPdfSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         });
         t.inputEl.rows = 6;
+      });
+
+    // Watermark
+    new Setting(containerEl).setName("Watermark").setHeading();
+
+    new Setting(containerEl)
+      .setName("Watermark text")
+      .setDesc("Leave empty to disable")
+      .addText((t) => {
+        t.setPlaceholder("DRAFT")
+          .setValue(theme.watermarkText)
+          .onChange(async (v) => {
+            theme.watermarkText = v;
+            await this.plugin.saveSettings();
+          });
+      });
+
+    new Setting(containerEl)
+      .setName("Watermark color")
+      .addText((t) => {
+        t.inputEl.type = "color";
+        t.setValue(theme.watermarkColor).onChange(async (v) => {
+          theme.watermarkColor = v;
+          await this.plugin.saveSettings();
+        });
+      });
+
+    new Setting(containerEl)
+      .setName("Watermark opacity")
+      .setDesc("0 = invisible, 1 = fully opaque")
+      .addText((t) => {
+        t.setValue(String(theme.watermarkOpacity)).onChange(async (v) => {
+          const n = parseFloat(v);
+          if (!isNaN(n) && n >= 0 && n <= 1) {
+            theme.watermarkOpacity = n;
+            await this.plugin.saveSettings();
+          }
+        });
+      });
+
+    new Setting(containerEl)
+      .setName("Watermark font size")
+      .addText((t) => {
+        t.setValue(theme.watermarkFontSize).onChange(async (v) => {
+          theme.watermarkFontSize = v;
+          await this.plugin.saveSettings();
+        });
+      });
+
+    new Setting(containerEl)
+      .setName("Watermark rotation")
+      .setDesc("In degrees, e.g. -45")
+      .addText((t) => {
+        t.setValue(String(theme.watermarkRotation)).onChange(async (v) => {
+          const n = parseFloat(v);
+          if (!isNaN(n)) {
+            theme.watermarkRotation = n;
+            await this.plugin.saveSettings();
+          }
+        });
       });
 
     // Typography

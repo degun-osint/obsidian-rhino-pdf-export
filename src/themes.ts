@@ -14,6 +14,7 @@ export const BUILTIN_THEMES: PdfTheme[] = [
     subtitle: "",
     showHeaderLogo: false,
     headerLogoHeight: "10mm",
+    headerText: "",
     showPagination: true,
     footerText: "",
     showLegal: false,
@@ -25,6 +26,11 @@ export const BUILTIN_THEMES: PdfTheme[] = [
     pageSize: "A4",
     orientation: "portrait",
     margins: { top: "20mm", right: "20mm", bottom: "20mm", left: "20mm" },
+    watermarkText: "",
+    watermarkColor: "#000000",
+    watermarkOpacity: 0.08,
+    watermarkFontSize: "80pt",
+    watermarkRotation: -45,
   },
 ];
 
@@ -41,6 +47,7 @@ export function createBlankTheme(): PdfTheme {
     subtitle: "",
     showHeaderLogo: false,
     headerLogoHeight: "12mm",
+    headerText: "",
     showPagination: true,
     footerText: "",
     showLegal: false,
@@ -52,5 +59,10 @@ export function createBlankTheme(): PdfTheme {
     pageSize: "A4",
     orientation: "portrait",
     margins: { top: "25mm", right: "20mm", bottom: "25mm", left: "20mm" },
+    watermarkText: "",
+    watermarkColor: "#000000",
+    watermarkOpacity: 0.08,
+    watermarkFontSize: "80pt",
+    watermarkRotation: -45,
   };
 }

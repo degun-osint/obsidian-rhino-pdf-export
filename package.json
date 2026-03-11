@@ -13,5 +13,8 @@
     "eslint-plugin-obsidianmd": "^0.1.9",
     "obsidian": "latest",
     "typescript": "^5.4.0"
+  },
+  "dependencies": {
+    "pdf-lib": "^1.17.1"
   }
 }

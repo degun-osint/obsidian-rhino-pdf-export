@@ -19,10 +19,11 @@ export interface PdfTheme {
   // Header (page 2+)
   showHeaderLogo: boolean;
   headerLogoHeight: string; // CSS value, e.g. "12mm"
+  headerText: string; // supports {title}, {date}
 
   // Footer
   showPagination: boolean;
-  footerText: string;
+  footerText: string; // supports {title}, {date}
 
   // Legal notice
   showLegal: boolean;
@@ -38,6 +39,13 @@ export interface PdfTheme {
   pageSize: string; // "A4", "Letter"
   orientation: "portrait" | "landscape";
   margins: { top: string; right: string; bottom: string; left: string };
+
+  // Watermark
+  watermarkText: string;
+  watermarkColor: string;
+  watermarkOpacity: number; // 0–1
+  watermarkFontSize: string; // e.g. "80pt"
+  watermarkRotation: number; // degrees, e.g. -45
 }
 
 export interface PluginSettings {

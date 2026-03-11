@@ -31,24 +31,26 @@ export class ExportModal extends Modal {
   private saveSettings: () => Promise<void>;
   private selectedTheme: PdfTheme;
   private overrideSubtitle = "";
-  private overrideFooterText = "";
   private previewWebview: HTMLElement | null = null;
   private previewTempFile: string | null = null;
   private cachedBodyHtml: string | null = null;
   private cachedTitle: string | null = null;
   private cachedLogoDataUris: Map<string, string> = new Map();
   private themeOverrides: Partial<PdfTheme> | null = null;
+  private pluginId: string;
 
   constructor(
     app: App,
     file: TFile,
     settings: PluginSettings,
-    saveSettings: () => Promise<void>
+    saveSettings: () => Promise<void>,
+    pluginId: string
   ) {
     super(app);
     this.file = file;
     this.settings = settings;
     this.saveSettings = saveSettings;
+    this.pluginId = pluginId;
 
     const allThemes = [...BUILTIN_THEMES, ...this.settings.themes];
     this.selectedTheme =
@@ -89,15 +91,16 @@ export class ExportModal extends Modal {
       });
 
     new Setting(contentEl)
-      .setName("Footer text override")
-      .setDesc("Leave empty to use theme default")
-      .addText((t) => {
-        t.setPlaceholder(this.selectedTheme.footerText || "(theme default)")
-          .setValue(this.overrideFooterText)
-          .onChange((v) => {
-            this.overrideFooterText = v;
-            void this.updatePreview();
-          });
+      .addButton((btn) => {
+        btn.setButtonText("Edit theme").onClick(() => {
+          this.close();
+          // Open plugin settings tab
+          const setting = (this.app as Record<string, unknown>).setting;
+          if (setting && typeof (setting as Record<string, unknown>).open === "function") {
+            (setting as { open: () => void }).open();
+            (setting as { openTabById: (id: string) => void }).openTabById(this.pluginId);
+          }
+        });
       });
 
     // PDF preview container
@@ -195,11 +198,8 @@ export class ExportModal extends Modal {
     if (this.themeOverrides) {
       theme = applyThemeOverrides(theme, this.themeOverrides);
     }
-    // Apply modal-level overrides
-    if (this.overrideSubtitle || this.overrideFooterText) {
-      theme = { ...theme };
-      if (this.overrideSubtitle) theme.subtitle = this.overrideSubtitle;
-      if (this.overrideFooterText) theme.footerText = this.overrideFooterText;
+    if (this.overrideSubtitle) {
+      theme = { ...theme, subtitle: this.overrideSubtitle };
     }
     return theme;
   }

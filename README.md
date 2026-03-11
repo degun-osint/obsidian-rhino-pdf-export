@@ -1,6 +1,6 @@
 # Rhino PDF Export for Obsidian
 
-Export Markdown notes to beautifully styled PDFs with configurable themes: colors, logo, header/footer, legal notice.
+Export Markdown notes to beautifully styled PDFs with configurable themes: colors, logo, header/footer, watermark, PDF bookmarks, legal notice.
 
 ## Features
 
@@ -13,8 +13,12 @@ Export Markdown notes to beautifully styled PDFs with configurable themes: color
 - **Merge mode**: combine all notes in a folder into a single PDF with a full table of contents
 - **Table of contents**: auto-generated from H2/H3 headings, with page numbers and customizable title
 - **YAML frontmatter**: override theme settings per note via the `rhino-pdf` key
-- **Export overrides**: subtitle and footer text can be changed in the export modal without modifying the theme
+- **Export overrides**: subtitle can be changed in the export modal without modifying the theme
 - **Obsidian callouts**: full callout rendering with colors and icons (all standard types + [Callout Manager](https://github.com/eth-p/obsidian-callout-manager) compatibility)
+- **Watermark**: optional text watermark on every page (configurable text, color, opacity, font size, rotation)
+- **Dynamic headers/footers**: header and footer text support `{title}` and `{date}` variables, resolved at export time
+- **PDF bookmarks**: clickable outline (H1/H2/H3) generated automatically in the PDF, visible in any PDF reader's sidebar
+- **Edit theme shortcut**: "Edit theme" button in the export modal opens the theme editor directly
 - **Logo**: displayed on cover page + small version in the top-right corner of subsequent pages
 - **Pagination**: page number / total in footer (CSS counters via paged.js)
 - **Legal notice**: optional block at the end of the document
@@ -46,7 +50,7 @@ cp main.js manifest.json styles.css /path/to/vault/.obsidian/plugins/rhino-pdf-e
 - **Right-click** on a `.md` file → `Export note as PDF`
 - **Right-click** on a folder → `Export folder as PDF`
 
-The export modal shows a live PDF preview and lets you pick the theme, override subtitle and footer text, and choose the output location.
+The export modal shows a live PDF preview and lets you pick the theme, override the subtitle, jump to the theme editor, and choose the output location.
 
 For folder export, a toggle lets you merge all notes into a single PDF with a global table of contents.
 
@@ -60,6 +64,8 @@ rhino-pdf:
   primaryColor: "#e63946"
   showCover: false
   subtitle: "My subtitle"
+  watermarkText: "DRAFT"
+  headerText: "{title} — {date}"
   margins:
     top: 30mm
     bottom: 30mm
@@ -83,7 +89,7 @@ Settings → Rhino PDF Export:
 - Browse built-in themes
 - Create / edit / delete custom themes
 - Import / export themes as JSON
-- Per theme: colors, logo (vault path), cover page, subtitle, table of contents (+ custom title), header logo, pagination, footer text, legal notice, fonts, font size, page size, margins
+- Per theme: colors, logo (vault path), cover page, subtitle, table of contents (+ custom title), header logo, header text (`{title}`, `{date}`), pagination, footer text (`{title}`, `{date}`), watermark (text, color, opacity, size, rotation), legal notice, fonts, font size, page size, orientation, margins
 
 ## Development
 
@@ -115,6 +121,7 @@ src/
 - TypeScript + esbuild
 - Obsidian API (MarkdownRenderer, Plugin, Modal, SettingTab)
 - paged.js v0.4.3 (CSS Paged Media polyfill, bundled locally)
+- pdf-lib (PDF bookmarks/outline generation)
 - Electron BrowserWindow + printToPDF
 
 ## Acknowledgments

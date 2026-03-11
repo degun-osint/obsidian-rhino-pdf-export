@@ -23,7 +23,8 @@ export default class RhinoPdfExport extends Plugin {
             this.app,
             file,
             this.settings,
-            () => this.saveSettings()
+            () => this.saveSettings(),
+            this.manifest.id
           ).open();
         }
         return true;
