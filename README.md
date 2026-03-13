@@ -33,7 +33,7 @@ Settings → Community plugins → Browse → search "Rhino PDF Export" → Inst
 
 ### Manual
 
-Download `main.js`, `manifest.json` and `styles.css` from the [latest release](https://github.com/DegunStudios/obsidian-rhino-pdf-export/releases/latest), then copy them into your vault at `.obsidian/plugins/rhino-pdf-export/`.
+Download `main.js`, `manifest.json` and `styles.css` from the [latest release](https://github.com/degun-osint/obsidian-rhino-pdf-export/releases/latest), then copy them into your vault at `.obsidian/plugins/rhino-pdf-export/`.
 
 ### From source
 
