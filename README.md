@@ -38,7 +38,7 @@ Download `main.js`, `manifest.json` and `styles.css` from the [latest release](h
 ### From source
 
 ```bash
-git clone https://github.com/DegunStudios/obsidian-rhino-pdf-export.git
+git clone https://github.com/degun-osint/obsidian-rhino-pdf-export.git
 cd obsidian-rhino-pdf-export
 npm install && npm run build
 cp main.js manifest.json styles.css /path/to/vault/.obsidian/plugins/rhino-pdf-export/
