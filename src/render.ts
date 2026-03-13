@@ -672,7 +672,7 @@ function extractHeadings(bodyHtml: string, counterStart = 0): {
   let counter = counterStart;
   const html = bodyHtml.replace(/<(h[23])([^>]*)>([\s\S]*?)<\/\1>/gi, (_match: string, tag: string, attrs: string, content: string) => {
     const level = parseInt(tag[1]);
-    const text = content.replace(/<[^>]+>/g, "").trim();
+    const text = content.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, " ").trim();
     const id = `toc-${counter++}`;
     headings.push({ level, text, id });
     return `<${tag}${attrs} id="${id}">${content}</${tag}>`;
