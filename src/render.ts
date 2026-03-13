@@ -99,6 +99,12 @@ body {
   margin-top: 3mm;
 }
 
+/* --- Images --- */
+img {
+  max-width: 100%;
+  height: auto;
+}
+
 /* --- Headings --- */
 h2 {
   font-size: 14pt;
@@ -144,6 +150,9 @@ code {
   font-weight: 500;
 }
 
+.copy-code-button, .code-block-flair {
+  display: none !important;
+}
 pre {
   background: #1e2433;
   color: #e0e6f0;
