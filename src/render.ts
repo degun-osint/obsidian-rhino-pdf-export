@@ -403,6 +403,131 @@ ${theme.watermarkText ? `
 }
 
 /**
+ * Build the running header markup (text on the left, logo on the right).
+ */
+function buildRunningHeader(theme: PdfTheme, title: string, logoDataUri: string): string {
+  const logoImg = logoDataUri ? `<img src="${logoDataUri}" alt="Logo">` : "";
+  const headerLogo =
+    theme.showHeaderLogo && logoDataUri
+      ? `<div class="running-header-logo">${logoImg}</div>`
+      : "";
+  const headerText = theme.headerText
+    ? `<div class="running-header-text">${escapeHtml(resolveTextVariables(theme.headerText, title))}</div>`
+    : "";
+  return `${headerText}\n  ${headerLogo}`;
+}
+
+/**
+ * Build the running footer markup (pagination counters + optional text).
+ */
+function buildRunningFooter(theme: PdfTheme, title: string): string {
+  let footerContent = "";
+  if (theme.showPagination) {
+    footerContent = '<span class="page-num"></span> / <span class="page-total"></span>';
+  }
+  if (theme.footerText) {
+    const resolvedFooter = escapeHtml(resolveTextVariables(theme.footerText, title));
+    footerContent += footerContent ? ` — ${resolvedFooter}` : resolvedFooter;
+  }
+  return footerContent ? `<div class="running-footer">${footerContent}</div>` : "";
+}
+
+/**
+ * Build the cover page markup (logo + title + subtitle).
+ */
+function buildCover(theme: PdfTheme, title: string, logoDataUri: string): string {
+  if (!theme.showCover) return "";
+  const coverLogo = logoDataUri ? `<img src="${logoDataUri}" alt="Logo">` : "";
+  const subtitle = theme.subtitle ? `<div class="subtitle">${escapeHtml(theme.subtitle)}</div>` : "";
+  return `
+    <div class="cover">
+      ${coverLogo}
+      <h1>${escapeHtml(title)}</h1>
+      ${subtitle}
+    </div>`;
+}
+
+/**
+ * Build the legal notice markup, shown once at the end of the document.
+ */
+function buildLegal(theme: PdfTheme): string {
+  if (!(theme.showLegal && theme.legalText)) return "";
+  const legalTitle = theme.legalTitle
+    ? `<div class="legal-title">${escapeHtml(theme.legalTitle)}</div>`
+    : "";
+  return `<div class="legal-footer">${legalTitle}${escapeHtml(theme.legalText)}</div>`;
+}
+
+/**
+ * Build the <script> blocks that run paged.js and signal render completion.
+ *
+ * Completion protocol (read by pdf.ts):
+ * - paged.js fires PagedConfig.after(flow) once pagination is done. We then wait
+ *   for fonts + two paint frames so every page is fully laid out before capture,
+ *   record window.__rhinoState = {status: "done", pages: N}, and set
+ *   document.title = "PAGED_READY".
+ * - A long fallback (150s) only fires if paged.js never completes (hang/crash);
+ *   it marks the state as "timeout" so the export side knows the PDF may be
+ *   incomplete instead of silently truncating it.
+ */
+function buildHeadScripts(theme: PdfTheme): string {
+  const pagedJsB64: string = process.env.PAGED_JS_B64 as unknown as string;
+  return `  <script>
+    window.__rhinoErrors = [];
+    window.onerror = function(msg, src, line, col, err) {
+      window.__rhinoErrors.push({msg: msg, src: src, line: line, err: String(err)});
+    };
+    window.PagedConfig = {
+      auto: true,
+      after: function(flow) {${buildOutlineScript()}${buildWatermarkScript(theme)}
+        var pageCount = (flow && flow.total) || document.querySelectorAll(".pagedjs_page").length;
+        var signalReady = function() {
+          window.__rhinoState = { status: "done", pages: pageCount };
+          document.title = "PAGED_READY";
+        };
+        var fontsReady = (document.fonts && document.fonts.ready) ? document.fonts.ready : Promise.resolve();
+        fontsReady.then(function() {
+          requestAnimationFrame(function() { requestAnimationFrame(signalReady); });
+        });
+      }
+    };
+  </script>
+  <script>
+    try {
+      eval(atob("${pagedJsB64}"));
+    } catch(e) {
+      window.__rhinoErrors.push({msg: "eval failed", err: String(e)});
+      window.__rhinoState = { status: "error", pages: 0 };
+      document.title = "PAGED_READY";
+    }
+    setTimeout(function() {
+      if (!window.__rhinoState) {
+        window.__rhinoErrors.push({msg: "paged.js timeout fallback triggered"});
+        window.__rhinoState = { status: "timeout", pages: document.querySelectorAll(".pagedjs_page").length };
+        document.title = "PAGED_READY";
+      }
+    }, 150000);
+  </script>`;
+}
+
+/**
+ * Assemble the final HTML document from CSS, paged.js scripts and a body.
+ */
+function assembleDocument(css: string, theme: PdfTheme, body: string): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <style>${css}</style>
+${buildHeadScripts(theme)}
+</head>
+<body>
+${body}
+</body>
+</html>`;
+}
+
+/**
  * Build the complete HTML document for PDF generation.
  */
 export function buildHtml(
@@ -412,52 +537,8 @@ export function buildHtml(
   logoDataUri: string
 ): string {
   const css = buildCss(theme);
-  const logoImg = logoDataUri
-    ? `<img src="${logoDataUri}" alt="Logo">`
-    : "";
 
-  // Running header (logo + text, page 2+)
-  const headerLogo =
-    theme.showHeaderLogo && logoDataUri
-      ? `<div class="running-header-logo">${logoImg}</div>`
-      : "";
-  const headerText = theme.headerText
-    ? `<div class="running-header-text">${escapeHtml(resolveTextVariables(theme.headerText, title))}</div>`
-    : "";
-
-  // Running footer (pagination via paged.js CSS counters)
-  let footerContent = "";
-  if (theme.showPagination) {
-    footerContent = '<span class="page-num"></span> / <span class="page-total"></span>';
-  }
-  if (theme.footerText) {
-    const resolvedFooter = escapeHtml(resolveTextVariables(theme.footerText, title));
-    footerContent += footerContent
-      ? ` — ${resolvedFooter}`
-      : resolvedFooter;
-  }
-  const footer = footerContent
-    ? `<div class="running-footer">${footerContent}</div>`
-    : "";
-
-  // Cover page
-  let cover = "";
-  if (theme.showCover) {
-    const coverLogo = logoDataUri
-      ? `<img src="${logoDataUri}" alt="Logo">`
-      : "";
-    const subtitle = theme.subtitle
-      ? `<div class="subtitle">${escapeHtml(theme.subtitle)}</div>`
-      : "";
-    cover = `
-    <div class="cover">
-      ${coverLogo}
-      <h1>${escapeHtml(title)}</h1>
-      ${subtitle}
-    </div>`;
-  }
-
-  // Table of contents
+  // Table of contents (extract headings + inject anchor IDs into the body)
   let toc = "";
   let processedBody = bodyHtml;
   if (theme.showToc) {
@@ -466,60 +547,16 @@ export function buildHtml(
     toc = buildTocHtml(extracted.headings, theme.tocTitle || "Table of Contents");
   }
 
-  // Legal notice
-  let legal = "";
-  if (theme.showLegal && theme.legalText) {
-    const legalTitle = theme.legalTitle
-      ? `<div class="legal-title">${escapeHtml(theme.legalTitle)}</div>`
-      : "";
-    legal = `<div class="legal-footer">${legalTitle}${escapeHtml(theme.legalText)}</div>`;
-  }
+  const body = [
+    buildRunningHeader(theme, title, logoDataUri),
+    buildRunningFooter(theme, title),
+    buildCover(theme, title, logoDataUri),
+    toc,
+    processedBody,
+    buildLegal(theme),
+  ].join("\n  ");
 
-  // paged.js bundled locally (base64-encoded at build time to avoid HTML parsing issues)
-  const pagedJsB64: string = process.env.PAGED_JS_B64 as unknown as string;
-
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <style>${css}</style>
-  <script>
-    window.__rhinoErrors = [];
-    window.onerror = function(msg, src, line, col, err) {
-      window.__rhinoErrors.push({msg: msg, src: src, line: line, err: String(err)});
-    };
-    window.PagedConfig = {
-      auto: true,
-      after: function() {${buildOutlineScript()}${buildWatermarkScript(theme)}
-        document.title = "PAGED_READY";
-      }
-    };
-  </script>
-  <script>
-    try {
-      eval(atob("${pagedJsB64}"));
-    } catch(e) {
-      window.__rhinoErrors.push({msg: "eval failed", err: String(e)});
-      document.title = "PAGED_READY";
-    }
-    setTimeout(function() {
-      if (document.title !== "PAGED_READY") {
-        window.__rhinoErrors.push({msg: "paged.js timeout fallback triggered"});
-        document.title = "PAGED_READY";
-      }
-    }, 15000);
-  </script>
-</head>
-<body>
-  ${headerText}
-  ${headerLogo}
-  ${footer}
-  ${cover}
-  ${toc}
-  ${processedBody}
-  ${legal}
-</body>
-</html>`;
+  return assembleDocument(css, theme, body);
 }
 
 /**
@@ -532,50 +569,6 @@ export function buildMergedHtml(
   logoDataUri: string
 ): string {
   const css = buildCss(theme);
-  const logoImg = logoDataUri
-    ? `<img src="${logoDataUri}" alt="Logo">`
-    : "";
-
-  // Running header (logo + text, page 2+)
-  const headerLogo =
-    theme.showHeaderLogo && logoDataUri
-      ? `<div class="running-header-logo">${logoImg}</div>`
-      : "";
-  const headerText = theme.headerText
-    ? `<div class="running-header-text">${escapeHtml(resolveTextVariables(theme.headerText, mergedTitle))}</div>`
-    : "";
-
-  // Running footer (pagination via paged.js CSS counters)
-  let footerContent = "";
-  if (theme.showPagination) {
-    footerContent = '<span class="page-num"></span> / <span class="page-total"></span>';
-  }
-  if (theme.footerText) {
-    const resolvedFooter = escapeHtml(resolveTextVariables(theme.footerText, mergedTitle));
-    footerContent += footerContent
-      ? ` — ${resolvedFooter}`
-      : resolvedFooter;
-  }
-  const footer = footerContent
-    ? `<div class="running-footer">${footerContent}</div>`
-    : "";
-
-  // Cover page with merged title
-  let cover = "";
-  if (theme.showCover) {
-    const coverLogo = logoDataUri
-      ? `<img src="${logoDataUri}" alt="Logo">`
-      : "";
-    const subtitle = theme.subtitle
-      ? `<div class="subtitle">${escapeHtml(theme.subtitle)}</div>`
-      : "";
-    cover = `
-    <div class="cover">
-      ${coverLogo}
-      <h1>${escapeHtml(mergedTitle)}</h1>
-      ${subtitle}
-    </div>`;
-  }
 
   // Build sections with page breaks between each note
   // Extract all H2/H3 headings from each section for a full TOC
@@ -613,59 +606,16 @@ export function buildMergedHtml(
     toc = buildTocHtml(allHeadings, theme.tocTitle || "Table of Contents");
   }
 
-  // Legal notice (once at the end)
-  let legal = "";
-  if (theme.showLegal && theme.legalText) {
-    const legalTitle = theme.legalTitle
-      ? `<div class="legal-title">${escapeHtml(theme.legalTitle)}</div>`
-      : "";
-    legal = `<div class="legal-footer">${legalTitle}${escapeHtml(theme.legalText)}</div>`;
-  }
+  const body = [
+    buildRunningHeader(theme, mergedTitle, logoDataUri),
+    buildRunningFooter(theme, mergedTitle),
+    buildCover(theme, mergedTitle, logoDataUri),
+    toc,
+    sectionsHtml,
+    buildLegal(theme),
+  ].join("\n  ");
 
-  const pagedJsB64: string = process.env.PAGED_JS_B64 as unknown as string;
-
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <style>${css}</style>
-  <script>
-    window.__rhinoErrors = [];
-    window.onerror = function(msg, src, line, col, err) {
-      window.__rhinoErrors.push({msg: msg, src: src, line: line, err: String(err)});
-    };
-    window.PagedConfig = {
-      auto: true,
-      after: function() {${buildOutlineScript()}${buildWatermarkScript(theme)}
-        document.title = "PAGED_READY";
-      }
-    };
-  </script>
-  <script>
-    try {
-      eval(atob("${pagedJsB64}"));
-    } catch(e) {
-      window.__rhinoErrors.push({msg: "eval failed", err: String(e)});
-      document.title = "PAGED_READY";
-    }
-    setTimeout(function() {
-      if (document.title !== "PAGED_READY") {
-        window.__rhinoErrors.push({msg: "paged.js timeout fallback triggered"});
-        document.title = "PAGED_READY";
-      }
-    }, 15000);
-  </script>
-</head>
-<body>
-  ${headerText}
-  ${headerLogo}
-  ${footer}
-  ${cover}
-  ${toc}
-  ${sectionsHtml}
-  ${legal}
-</body>
-</html>`;
+  return assembleDocument(css, theme, body);
 }
 
 /**

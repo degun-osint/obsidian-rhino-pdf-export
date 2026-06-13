@@ -48,27 +48,47 @@ export async function generatePdf(
   try {
     await win.loadFile(tempFile);
 
-    // Wait for paged.js to finish
-    await waitForPagedJs(win.webContents);
+    // Wait for paged.js to finish and report its state (status + page count).
+    const state = await waitForPagedJs(win.webContents);
+    if (state.status !== "done") {
+      new Notice(
+        `Rhino PDF: paged.js n'a pas terminé proprement (${state.status}). Le PDF peut être incomplet.`
+      );
+    }
 
-    // Small delay for paint to complete after paged.js signals ready
-    await sleep(500);
+    // Short safety margin only — the heavy paint wait (fonts + two animation
+    // frames) already happened in-page before PAGED_READY was signalled.
+    await sleep(150);
 
     // Collect outline data from the DOM
     const outline: OutlineEntry[] = await win.webContents.executeJavaScript(
       "window.__rhinoOutline || []"
     );
 
-    const pdfData = await win.webContents.printToPDF({
-      printBackground: true,
-      preferCSSPageSize: true,
-    });
+    const expectedPages = state.pages || 0;
 
-    let pdfBytes = Buffer.from(pdfData);
+    // Render to PDF. If the captured page count comes back short of what
+    // paged.js laid out, the paint wasn't complete — retry once with a longer
+    // wait before giving up (truncation guard).
+    let pdfBytes = await printPdf(win.webContents);
+    let pdfDoc = await PDFDocument.load(pdfBytes);
+    if (expectedPages > 0 && pdfDoc.getPageCount() < expectedPages) {
+      await sleep(1500);
+      pdfBytes = await printPdf(win.webContents);
+      pdfDoc = await PDFDocument.load(pdfBytes);
+    }
 
-    // Add PDF bookmarks if outline data is available
+    const actualPages = pdfDoc.getPageCount();
+    if (expectedPages > 0 && actualPages < expectedPages) {
+      new Notice(
+        `Rhino PDF: ${actualPages}/${expectedPages} pages exportées — le document semble tronqué.`
+      );
+    }
+
+    // Add PDF bookmarks if outline data is available (re-serializes the doc).
     if (outline.length > 0) {
-      pdfBytes = Buffer.from(await addPdfBookmarks(pdfBytes, outline));
+      applyPdfBookmarks(pdfDoc, outline);
+      pdfBytes = Buffer.from(await pdfDoc.save());
     }
 
     const dir = path.dirname(outputPath);
@@ -84,13 +104,23 @@ export async function generatePdf(
 }
 
 /**
- * Add bookmarks (outline) to a PDF buffer using pdf-lib.
+ * Render the current page to a PDF buffer via Electron's printToPDF.
  */
-async function addPdfBookmarks(
-  pdfBytes: Buffer,
+async function printPdf(webContents: WebContents): Promise<Buffer> {
+  const data = await webContents.printToPDF({
+    printBackground: true,
+    preferCSSPageSize: true,
+  });
+  return Buffer.from(data);
+}
+
+/**
+ * Add bookmarks (outline) to an already-loaded PDF document in place using pdf-lib.
+ */
+function applyPdfBookmarks(
+  pdfDoc: PDFDocument,
   outline: OutlineEntry[]
-): Promise<Uint8Array> {
-  const pdfDoc = await PDFDocument.load(pdfBytes);
+): void {
   const pageCount = pdfDoc.getPageCount();
   const context = pdfDoc.context;
 
@@ -186,20 +216,33 @@ async function addPdfBookmarks(
 
   // Set outline on catalog
   pdfDoc.catalog.set(PDFName.of("Outlines"), outlineRef);
-
-  return pdfDoc.save();
 }
 
-async function waitForPagedJs(webContents: WebContents, maxMs = 20000): Promise<void> {
+interface PagedState {
+  status: "done" | "timeout" | "error" | "timeout-node";
+  pages: number;
+}
+
+/**
+ * Poll the render window until paged.js reports its state on window.__rhinoState.
+ * The state distinguishes a clean finish ("done") from a fallback timeout, so the
+ * caller can warn instead of silently shipping a truncated PDF.
+ *
+ * maxMs (180s) sits above the in-page fallback (150s) so that, on a genuine hang,
+ * paged.js's own fallback fires first and still reports a page count.
+ */
+async function waitForPagedJs(webContents: WebContents, maxMs = 180000): Promise<PagedState> {
   const start = Date.now();
   while (Date.now() - start < maxMs) {
-    const title = await webContents.executeJavaScript("document.title");
-    if (title === "PAGED_READY") {
-      return;
+    const state = (await webContents.executeJavaScript(
+      "window.__rhinoState || null"
+    )) as PagedState | null;
+    if (state) {
+      return state;
     }
-    await sleep(200);
+    await sleep(150);
   }
-  new Notice("Warning: paged.js timed out — PDF may have pagination issues.");
+  return { status: "timeout-node", pages: 0 };
 }
 
 function sleep(ms: number): Promise<void> {

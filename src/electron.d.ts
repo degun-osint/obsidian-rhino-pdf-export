@@ -11,7 +11,8 @@ declare module "electron" {
   }
 
   interface WebContents {
-    executeJavaScript(code: string): Promise<string>;
+    // Resolves with whatever the evaluated code returns (Electron types this as any).
+    executeJavaScript(code: string): Promise<any>;
     printToPDF(options: {
       printBackground?: boolean;
       preferCSSPageSize?: boolean;

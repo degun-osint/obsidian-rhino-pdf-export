@@ -446,7 +446,7 @@ export class ThemedPdfSettingTab extends PluginSettingTab {
             id: "custom-" + Date.now(),
             margins: { ...blank.margins, ...((data.margins as Record<string, string>) || {}) },
           };
-          delete (imported as Record<string, unknown>).builtin;
+          delete (imported as unknown as Record<string, unknown>).builtin;
 
           this.plugin.settings.themes.push(imported);
           void this.plugin.saveSettings().then(() => {

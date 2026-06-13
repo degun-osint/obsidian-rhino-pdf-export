@@ -95,7 +95,7 @@ export class ExportModal extends Modal {
         btn.setButtonText("Edit theme").onClick(() => {
           this.close();
           // Open plugin settings tab
-          const setting = (this.app as Record<string, unknown>).setting;
+          const setting = (this.app as unknown as Record<string, unknown>).setting;
           if (setting && typeof (setting as Record<string, unknown>).open === "function") {
             (setting as { open: () => void }).open();
             (setting as { openTabById: (id: string) => void }).openTabById(this.pluginId);
