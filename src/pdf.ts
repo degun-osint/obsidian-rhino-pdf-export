@@ -246,5 +246,5 @@ async function waitForPagedJs(webContents: WebContents, maxMs = 180000): Promise
 }
 
 function sleep(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
+  return new Promise((r) => window.setTimeout(r, ms));
 }

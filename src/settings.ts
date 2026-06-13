@@ -415,7 +415,7 @@ export class ThemedPdfSettingTab extends PluginSettingTab {
     const json = JSON.stringify(exportData, null, 2);
     const blob = new Blob([json], { type: "application/json" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
+    const a = activeDocument.createElement("a");
     a.href = url;
     a.download = `${theme.name.replace(/[^a-zA-Z0-9_-]/g, "_")}.json`;
     a.click();
@@ -423,7 +423,7 @@ export class ThemedPdfSettingTab extends PluginSettingTab {
   }
 
   private importThemeFromJson() {
-    const input = document.createElement("input");
+    const input = activeDocument.createElement("input");
     input.type = "file";
     input.accept = ".json";
     input.addEventListener("change", () => {

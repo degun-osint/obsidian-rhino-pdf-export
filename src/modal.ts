@@ -143,7 +143,7 @@ export class ExportModal extends Modal {
 
   private async initPreview(container: HTMLElement) {
     await this.prepareContent();
-    const webview = document.createElement("webview");
+    const webview = activeDocument.createElement("webview");
     webview.addClass("rhino-webview");
     webview.setAttribute("webpreferences", "javascript=yes");
     this.previewWebview = webview;

@@ -18,11 +18,13 @@ export default defineConfig([
         require: "readonly",
         module: "readonly",
         // Browser/Electron globals
+        window: "readonly",
         document: "readonly",
         URL: "readonly",
         Blob: "readonly",
         HTMLElement: "readonly",
         // Obsidian globals
+        activeDocument: "readonly",
         createDiv: "readonly",
         createSpan: "readonly",
         createEl: "readonly",

@@ -181,7 +181,7 @@ export class BatchExportModal extends Modal {
   private async initPreview(container: HTMLElement, mdFiles: TFile[]) {
     if (mdFiles.length === 0) return;
 
-    const webview = document.createElement("webview");
+    const webview = activeDocument.createElement("webview");
     webview.addClass("rhino-webview");
     webview.setAttribute("webpreferences", "javascript=yes");
     this.previewWebview = webview;
