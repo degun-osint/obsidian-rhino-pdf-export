@@ -61,7 +61,7 @@ export async function generatePdf(
     await sleep(150);
 
     // Collect outline data from the DOM
-    const outline: OutlineEntry[] = await win.webContents.executeJavaScript(
+    const outline = await win.webContents.executeJavaScript<OutlineEntry[]>(
       "window.__rhinoOutline || []"
     );
 
@@ -234,9 +234,9 @@ interface PagedState {
 async function waitForPagedJs(webContents: WebContents, maxMs = 180000): Promise<PagedState> {
   const start = Date.now();
   while (Date.now() - start < maxMs) {
-    const state = (await webContents.executeJavaScript(
+    const state = await webContents.executeJavaScript<PagedState | null>(
       "window.__rhinoState || null"
-    )) as PagedState | null;
+    );
     if (state) {
       return state;
     }
