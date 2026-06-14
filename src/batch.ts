@@ -11,7 +11,7 @@ import {
 } from "obsidian";
 import type { PdfTheme, PluginSettings } from "./types";
 import { BUILTIN_THEMES } from "./themes";
-import { buildHtml, buildMergedHtml, resolveImagePaths } from "./render";
+import { buildHtml, buildMergedHtml, resolveImagePaths, makeDocVars, makePdfMetadata, applyPageBreaks } from "./render";
 import { generatePdf } from "./pdf";
 import { parseThemeOverrides, applyThemeOverrides } from "./frontmatter";
 import * as fs from "fs";
@@ -211,13 +211,15 @@ export class BatchExportModal extends Modal {
     const tempDiv = createDiv();
     const component = new Component();
     component.load();
-    await MarkdownRenderer.render(this.app, mdContent, tempDiv, firstFile.path, component);
+    await MarkdownRenderer.render(this.app, applyPageBreaks(mdContent), tempDiv, firstFile.path, component);
     const vaultBasePath = this.getVaultBasePath();
     const bodyHtml = resolveImagePaths(tempDiv.innerHTML, vaultBasePath);
     component.unload();
 
     const logoDataUri = await this.loadLogoDataUri(theme.logoPath);
-    const html = buildHtml(bodyHtml, title, theme, logoDataUri);
+    const fm = this.app.metadataCache.getFileCache(firstFile)?.frontmatter ?? {};
+    const vars = makeDocVars(title, firstFile.basename, fm);
+    const html = buildHtml(bodyHtml, title, theme, logoDataUri, vars);
 
     this.cleanupPreviewFile();
     const tempFile = path.join(os.tmpdir(), `rhino-batch-preview-${Date.now()}.html`);
@@ -332,7 +334,7 @@ export class BatchExportModal extends Modal {
         const tempDiv = createDiv();
         const component = new Component();
         component.load();
-        await MarkdownRenderer.render(this.app, mdContent, tempDiv, file.path, component);
+        await MarkdownRenderer.render(this.app, applyPageBreaks(mdContent), tempDiv, file.path, component);
         const vaultBase = this.getVaultBasePath();
         const bodyHtml = resolveImagePaths(tempDiv.innerHTML, vaultBase);
         component.unload();
@@ -346,8 +348,9 @@ export class BatchExportModal extends Modal {
     progressText.textContent = "Generating merged PDF…";
 
     const mergedTitle = folderName;
-    const html = buildMergedHtml(sections, mergedTitle, theme, logoDataUri);
-    await generatePdf(html, result.filePath);
+    const vars = makeDocVars(mergedTitle, folderName, {});
+    const html = buildMergedHtml(sections, mergedTitle, theme, logoDataUri, vars);
+    await generatePdf(html, result.filePath, makePdfMetadata(mergedTitle, {}));
 
     progressBar.value = mdFiles.length;
     new Notice(`Merged PDF exported → ${path.basename(result.filePath)} (${sections.length} notes)`);
@@ -402,7 +405,7 @@ export class BatchExportModal extends Modal {
     const tempDiv = createDiv();
     const component = new Component();
     component.load();
-    await MarkdownRenderer.render(this.app, mdContent, tempDiv, file.path, component);
+    await MarkdownRenderer.render(this.app, applyPageBreaks(mdContent), tempDiv, file.path, component);
     const vaultBase = this.getVaultBasePath();
     const bodyHtml = resolveImagePaths(tempDiv.innerHTML, vaultBase);
     component.unload();
@@ -412,10 +415,12 @@ export class BatchExportModal extends Modal {
       logoDataUri = await this.loadLogoDataUri(theme.logoPath);
     }
 
-    const html = buildHtml(bodyHtml, title, theme, logoDataUri);
+    const fm = this.app.metadataCache.getFileCache(file)?.frontmatter ?? {};
+    const vars = makeDocVars(title, file.basename, fm);
+    const html = buildHtml(bodyHtml, title, theme, logoDataUri, vars);
     const pdfName = file.basename + ".pdf";
     const fullPath = path.join(outputDir, pdfName);
 
-    await generatePdf(html, fullPath);
+    await generatePdf(html, fullPath, makePdfMetadata(title, fm));
   }
 }

@@ -1,4 +1,4 @@
-import type { PdfTheme } from "./types";
+import type { PdfTheme, DocVars, PdfMetadata, InfoRow } from "./types";
 
 /**
  * Build the CSS for PDF rendering from a theme.
@@ -19,7 +19,10 @@ function buildCss(theme: PdfTheme): string {
   }
   @top-right {
     content: element(headerlogo);
-  }
+  }${theme.classificationText ? `
+  @top-center {
+    content: element(classification);
+  }` : ""}
   @bottom-center {
     content: element(footerblock);
   }
@@ -29,7 +32,8 @@ function buildCss(theme: PdfTheme): string {
   margin-top: 15mm;
   @top-left { content: none; }
   @top-right { content: none; }
-  @bottom-center { content: none; }
+  @bottom-center { content: none; }${theme.classificationText ? `
+  @top-center { content: element(classification); }` : ""}
 }
 
 * { box-sizing: border-box; }
@@ -74,6 +78,24 @@ body {
   content: counter(pages);
 }
 
+/* --- Classification banner (centered, every page) --- */
+.running-classification {
+  position: running(classification);
+  font-family: ${theme.bodyFont};
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  text-align: center;
+  color: ${theme.classificationColor};
+}
+
+/* --- Manual page break (<!-- pagebreak --> in the note) --- */
+.rhino-pagebreak {
+  break-after: page;
+  page-break-after: always;
+}
+
 /* --- Cover page --- */
 .cover {
   text-align: center;
@@ -97,6 +119,25 @@ body {
   color: ${a};
   font-weight: 600;
   margin-top: 3mm;
+}
+.cover-info {
+  margin: 10mm auto 0 auto;
+  border-collapse: collapse;
+  font-size: 10pt;
+  text-align: left;
+}
+.cover-info th, .cover-info td {
+  padding: 1.5mm 5mm;
+  border-bottom: 1px solid #e0e0e0;
+  vertical-align: top;
+}
+.cover-info th {
+  color: ${p};
+  font-weight: 600;
+  white-space: nowrap;
+}
+.cover-info td {
+  color: #333;
 }
 
 /* --- Images --- */
@@ -124,6 +165,15 @@ h3 {
   margin-bottom: 3mm;
   page-break-after: avoid;
 }
+${theme.pageBreakBeforeH1 || theme.pageBreakBeforeH2 || theme.pageBreakBeforeH3 ? `
+/* --- Automatic page breaks before headings --- */
+${theme.pageBreakBeforeH1 ? "h1 { break-before: page; page-break-before: always; }" : ""}
+${theme.pageBreakBeforeH2 ? "h2 { break-before: page; page-break-before: always; }" : ""}
+${theme.pageBreakBeforeH3 ? "h3 { break-before: page; page-break-before: always; }" : ""}
+/* never break before cover/TOC headings (avoids a blank first page) */
+.cover h1, .cover h2, .cover h3,
+.toc h1, .toc h2, .toc h3 { break-before: avoid; page-break-before: avoid; }
+` : ""}
 
 p { margin: 2mm 0; text-align: justify; }
 ul, ol { margin: 2mm 0 2mm 5mm; padding-left: 5mm; }
@@ -405,14 +455,14 @@ ${theme.watermarkText ? `
 /**
  * Build the running header markup (text on the left, logo on the right).
  */
-function buildRunningHeader(theme: PdfTheme, title: string, logoDataUri: string): string {
+function buildRunningHeader(theme: PdfTheme, vars: DocVars, logoDataUri: string): string {
   const logoImg = logoDataUri ? `<img src="${logoDataUri}" alt="Logo">` : "";
   const headerLogo =
     theme.showHeaderLogo && logoDataUri
       ? `<div class="running-header-logo">${logoImg}</div>`
       : "";
   const headerText = theme.headerText
-    ? `<div class="running-header-text">${escapeHtml(resolveTextVariables(theme.headerText, title))}</div>`
+    ? `<div class="running-header-text">${escapeHtml(resolveTextVariables(theme.headerText, vars))}</div>`
     : "";
   return `${headerText}\n  ${headerLogo}`;
 }
@@ -420,30 +470,54 @@ function buildRunningHeader(theme: PdfTheme, title: string, logoDataUri: string)
 /**
  * Build the running footer markup (pagination counters + optional text).
  */
-function buildRunningFooter(theme: PdfTheme, title: string): string {
+function buildRunningFooter(theme: PdfTheme, vars: DocVars): string {
   let footerContent = "";
   if (theme.showPagination) {
     footerContent = '<span class="page-num"></span> / <span class="page-total"></span>';
   }
   if (theme.footerText) {
-    const resolvedFooter = escapeHtml(resolveTextVariables(theme.footerText, title));
+    const resolvedFooter = escapeHtml(resolveTextVariables(theme.footerText, vars));
     footerContent += footerContent ? ` — ${resolvedFooter}` : resolvedFooter;
   }
   return footerContent ? `<div class="running-footer">${footerContent}</div>` : "";
 }
 
 /**
- * Build the cover page markup (logo + title + subtitle).
+ * Build the classification banner markup (running element, every page).
  */
-function buildCover(theme: PdfTheme, title: string, logoDataUri: string): string {
+function buildClassification(theme: PdfTheme, vars: DocVars): string {
+  if (!theme.classificationText) return "";
+  return `<div class="running-classification">${escapeHtml(resolveTextVariables(theme.classificationText, vars))}</div>`;
+}
+
+/**
+ * Build the cover page markup (logo + title + subtitle + optional info block).
+ */
+function buildCover(
+  theme: PdfTheme,
+  title: string,
+  logoDataUri: string,
+  coverInfo: InfoRow[] = []
+): string {
   if (!theme.showCover) return "";
   const coverLogo = logoDataUri ? `<img src="${logoDataUri}" alt="Logo">` : "";
   const subtitle = theme.subtitle ? `<div class="subtitle">${escapeHtml(theme.subtitle)}</div>` : "";
+  let infoTable = "";
+  if (coverInfo.length > 0) {
+    const rows = coverInfo
+      .map((r) => `<tr><th>${escapeHtml(r.label)}</th><td>${escapeHtml(r.value)}</td></tr>`)
+      .join("\n        ");
+    infoTable = `
+      <table class="cover-info">
+        ${rows}
+      </table>`;
+  }
   return `
     <div class="cover">
       ${coverLogo}
       <h1>${escapeHtml(title)}</h1>
       ${subtitle}
+      ${infoTable}
     </div>`;
 }
 
@@ -534,7 +608,9 @@ export function buildHtml(
   bodyHtml: string,
   title: string,
   theme: PdfTheme,
-  logoDataUri: string
+  logoDataUri: string,
+  vars: DocVars,
+  coverInfo: InfoRow[] = []
 ): string {
   const css = buildCss(theme);
 
@@ -548,9 +624,10 @@ export function buildHtml(
   }
 
   const body = [
-    buildRunningHeader(theme, title, logoDataUri),
-    buildRunningFooter(theme, title),
-    buildCover(theme, title, logoDataUri),
+    buildRunningHeader(theme, vars, logoDataUri),
+    buildRunningFooter(theme, vars),
+    buildClassification(theme, vars),
+    buildCover(theme, title, logoDataUri, coverInfo),
     toc,
     processedBody,
     buildLegal(theme),
@@ -566,7 +643,8 @@ export function buildMergedHtml(
   sections: { title: string; bodyHtml: string }[],
   mergedTitle: string,
   theme: PdfTheme,
-  logoDataUri: string
+  logoDataUri: string,
+  vars: DocVars
 ): string {
   const css = buildCss(theme);
 
@@ -607,8 +685,9 @@ export function buildMergedHtml(
   }
 
   const body = [
-    buildRunningHeader(theme, mergedTitle, logoDataUri),
-    buildRunningFooter(theme, mergedTitle),
+    buildRunningHeader(theme, vars, logoDataUri),
+    buildRunningFooter(theme, vars),
+    buildClassification(theme, vars),
     buildCover(theme, mergedTitle, logoDataUri),
     toc,
     sectionsHtml,
@@ -732,12 +811,107 @@ function buildWatermarkScript(theme: PdfTheme): string {
 }
 
 /**
- * Replace {title} and {date} placeholders in header/footer text.
+ * Safely stringify an unknown frontmatter value: primitives as-is, arrays joined,
+ * objects/dates ignored (they have no meaningful inline representation).
  */
-function resolveTextVariables(text: string, title: string): string {
+export function frontmatterToString(v: unknown): string {
+  if (v === null || v === undefined) return "";
+  if (typeof v === "string") return v;
+  if (typeof v === "number" || typeof v === "boolean") return String(v);
+  if (Array.isArray(v)) return v.map(frontmatterToString).filter((s) => s !== "").join(", ");
+  return "";
+}
+
+/**
+ * Turn a frontmatter key into a human label (e.g. "case_id" -> "Case id").
+ */
+function prettifyKey(key: string): string {
+  const s = key.replace(/[_-]+/g, " ").trim();
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/**
+ * Build cover info-block rows from selected frontmatter keys (order preserved).
+ * Keys whose value stringifies to empty are skipped.
+ */
+export function coverInfoRows(
+  frontmatter: Record<string, unknown> | undefined | null,
+  keys: string[]
+): InfoRow[] {
+  const fm = frontmatter ?? {};
+  const rows: InfoRow[] = [];
+  for (const key of keys) {
+    const value = frontmatterToString(fm[key]);
+    if (value !== "") rows.push({ label: prettifyKey(key), value });
+  }
+  return rows;
+}
+
+function fmValue(vars: DocVars, key: string): string {
+  return frontmatterToString(vars.frontmatter[key]);
+}
+
+/**
+ * Replace placeholders in header/footer/classification text:
+ * {title} {filename} {author} {date} {time} and {fm.KEY} for any frontmatter key.
+ */
+function resolveTextVariables(text: string, vars: DocVars): string {
+  const now = new Date();
   return text
-    .replace(/\{title\}/gi, title)
-    .replace(/\{date\}/gi, new Date().toLocaleDateString());
+    .replace(/\{title\}/gi, vars.title)
+    .replace(/\{filename\}/gi, vars.filename)
+    .replace(/\{author\}/gi, fmValue(vars, "author"))
+    .replace(/\{date\}/gi, now.toLocaleDateString())
+    .replace(/\{time\}/gi, now.toLocaleTimeString())
+    .replace(/\{fm\.([a-zA-Z0-9_-]+)\}/gi, (_m, key: string) => fmValue(vars, key));
+}
+
+/**
+ * Build a DocVars context from a title, filename and raw frontmatter object.
+ */
+export function makeDocVars(
+  title: string,
+  filename: string,
+  frontmatter: Record<string, unknown> | undefined | null
+): DocVars {
+  return { title, filename, frontmatter: frontmatter ?? {} };
+}
+
+/**
+ * Derive PDF document metadata from the title and the note frontmatter.
+ * Reads `author`, `subject`, and `keywords`/`tags` when present.
+ */
+export function makePdfMetadata(
+  title: string,
+  frontmatter: Record<string, unknown> | undefined | null
+): PdfMetadata {
+  const fm = frontmatter ?? {};
+  const meta: PdfMetadata = { title };
+
+  const author = frontmatterToString(fm.author);
+  if (author) meta.author = author;
+  const subject = frontmatterToString(fm.subject);
+  if (subject) meta.subject = subject;
+
+  const kw = fm.keywords ?? fm.tags;
+  if (Array.isArray(kw)) {
+    meta.keywords = kw.map(frontmatterToString).filter((s) => s !== "");
+  } else if (typeof kw === "string" && kw.trim()) {
+    meta.keywords = kw.split(",").map((s) => s.trim()).filter(Boolean);
+  }
+
+  return meta;
+}
+
+/**
+ * Replace standalone `<!-- pagebreak -->` lines in raw markdown with a page-break
+ * element that survives MarkdownRenderer and is honored by the print CSS.
+ */
+export function applyPageBreaks(md: string): string {
+  return md.replace(
+    /^[ \t]*<!--\s*pagebreak\s*-->[ \t]*$/gim,
+    '<div class="rhino-pagebreak"></div>'
+  );
 }
 
 function escapeHtml(str: string): string {

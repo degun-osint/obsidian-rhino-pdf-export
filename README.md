@@ -2,6 +2,16 @@
 
 Export Markdown notes to beautifully styled PDFs with configurable themes: colors, logo, header/footer, watermark, PDF bookmarks, legal notice.
 
+## What's new in 1.1.0
+
+- **PDF metadata** written into the document properties (title/author/subject/keywords) from the frontmatter
+- **Classification banner** centered on every page (e.g. "RESTRICTED")
+- **Manual page breaks** (`<!-- pagebreak -->`) and **automatic** ones before H1/H2/H3
+- **Extended text variables**: `{filename}`, `{author}`, `{time}`, `{fm.key}` in headers/footers/banner
+- **Cover info block**: list chosen frontmatter fields in a table on the cover
+
+See the full [changelog](CHANGELOG.md).
+
 ## Features
 
 - **Built-in themes**: Minimal (clean, serif)
@@ -16,8 +26,13 @@ Export Markdown notes to beautifully styled PDFs with configurable themes: color
 - **Export overrides**: subtitle can be changed in the export modal without modifying the theme
 - **Obsidian callouts**: full callout rendering with colors and icons (all standard types + [Callout Manager](https://github.com/eth-p/obsidian-callout-manager) compatibility)
 - **Watermark**: optional text watermark on every page (configurable text, color, opacity, font size, rotation)
-- **Dynamic headers/footers**: header and footer text support `{title}` and `{date}` variables, resolved at export time
+- **Dynamic headers/footers**: header, footer and classification text support `{title}`, `{filename}`, `{author}`, `{date}`, `{time}` and `{fm.key}` (any frontmatter field), resolved at export time
 - **PDF bookmarks**: clickable outline (H1/H2/H3) generated automatically in the PDF, visible in any PDF reader's sidebar
+- **PDF metadata**: title/author/subject/keywords written into the document properties, read from the note frontmatter
+- **Classification banner**: optional text (e.g. "RESTRICTED") centered on every page, including the cover
+- **Manual page breaks**: insert `<!-- pagebreak -->` in a note to force a new page
+- **Automatic page breaks**: optionally start a new page before every H1/H2/H3 (per theme)
+- **Cover info block**: pick frontmatter fields (author, date, …) to list in a table on the cover, via checkboxes in the export modal
 - **Edit theme shortcut**: "Edit theme" button in the export modal opens the theme editor directly
 - **Logo**: displayed on cover page + small version in the top-right corner of subsequent pages
 - **Pagination**: page number / total in footer (CSS counters via paged.js)
@@ -29,7 +44,7 @@ Export Markdown notes to beautifully styled PDFs with configurable themes: color
 
 ### From Obsidian
 
-Settings → Community plugins → Browse → search "Rhino PDF Export" → Install → Enable. (waiting for validation on march 10th 2026)
+Settings → Community plugins → Browse → search "Rhino PDF Export" → Install → Enable.
 
 ### Manual
 
@@ -66,6 +81,8 @@ rhino-pdf:
   subtitle: "My subtitle"
   watermarkText: "DRAFT"
   headerText: "{title} — {date}"
+  classificationText: "RESTRICTED"
+  pageBreakBeforeH2: true
   margins:
     top: 30mm
     bottom: 30mm
@@ -73,6 +90,61 @@ rhino-pdf:
 ```
 
 All `PdfTheme` fields are supported.
+
+## Help & reference
+
+### Text variables
+
+Header, footer and classification text resolve these placeholders at export time:
+
+| Variable | Value |
+|---|---|
+| `{title}` | Note title (first `# H1`, or filename) |
+| `{filename}` | Note file name (without extension) |
+| `{author}` | Frontmatter `author` field |
+| `{date}` | Export date (locale format) |
+| `{time}` | Export time (locale format) |
+| `{fm.KEY}` | Any frontmatter field, e.g. `{fm.case_id}` |
+
+### Manual page break
+
+Put this on its own line anywhere in a note to force a new page:
+
+```markdown
+<!-- pagebreak -->
+```
+
+### Automatic page breaks
+
+In the theme editor (Page layout → "Page break before headings"), toggle **Before heading 1/2/3** to start a new page before every heading of that level. Cover and table-of-contents headings are never affected.
+
+### Classification banner
+
+Set **Classification text** in the theme editor (or `classificationText` in frontmatter) to print a centered banner on every page, cover included. It supports the text variables above, so `DIFFUSION RESTREINTE — {fm.case_id}` works. Color is configurable.
+
+### PDF metadata
+
+The generated PDF's document properties are filled from the note frontmatter:
+
+| PDF property | Frontmatter field |
+|---|---|
+| Title | note title |
+| Author | `author` |
+| Subject | `subject` |
+| Keywords | `keywords` or `tags` |
+
+### Cover info block
+
+In the export modal, each frontmatter field of the note appears as a checkbox under **Cover info block**. Tick the ones you want and they are listed as a label/value table on the cover page (requires a theme with a cover). Example frontmatter:
+
+```yaml
+---
+author: Degun
+subject: OSINT report
+case_id: AFFAIRE-2026-0042
+tags: [osint, report]
+---
+```
 
 ## Callouts
 
@@ -89,7 +161,8 @@ Settings → Rhino PDF Export:
 - Browse built-in themes
 - Create / edit / delete custom themes
 - Import / export themes as JSON
-- Per theme: colors, logo (vault path), cover page, subtitle, table of contents (+ custom title), header logo, header text (`{title}`, `{date}`), pagination, footer text (`{title}`, `{date}`), watermark (text, color, opacity, size, rotation), legal notice, fonts, font size, page size, orientation, margins
+- Per theme: colors, logo (vault path), cover page, subtitle, table of contents (+ custom title), header logo, header text, pagination, footer text, classification banner (text + color), watermark (text, color, opacity, size, rotation), legal notice, fonts, font size, page size, orientation, margins, page break before headings (H1/H2/H3)
+- Header/footer/classification text support variables (see [Help & reference](#help--reference))
 
 ## Development
 

@@ -1,7 +1,7 @@
 {
   "id": "rhino-pdf-export",
   "name": "Rhino PDF Export",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "minAppVersion": "1.4.0",
   "description": "Export notes as styled PDF with configurable themes, logos, headers/footers, and legal notices.",
   "author": "Degun",

@@ -10,7 +10,7 @@ import {
 } from "obsidian";
 import type { PdfTheme, PluginSettings } from "./types";
 import { BUILTIN_THEMES } from "./themes";
-import { buildHtml, resolveImagePaths } from "./render";
+import { buildHtml, resolveImagePaths, makeDocVars, makePdfMetadata, applyPageBreaks, coverInfoRows, frontmatterToString } from "./render";
 import { generatePdf } from "./pdf";
 import { parseThemeOverrides, applyThemeOverrides } from "./frontmatter";
 import * as fs from "fs";
@@ -37,6 +37,8 @@ export class ExportModal extends Modal {
   private cachedTitle: string | null = null;
   private cachedLogoDataUris: Map<string, string> = new Map();
   private themeOverrides: Partial<PdfTheme> | null = null;
+  private cachedFrontmatter: Record<string, unknown> = {};
+  private infoBlockKeys: Set<string> = new Set();
   private pluginId: string;
 
   constructor(
@@ -103,6 +105,8 @@ export class ExportModal extends Modal {
         });
       });
 
+    this.buildInfoBlockSection(contentEl);
+
     // PDF preview container
     const previewContainer = contentEl.createDiv("pdf-preview-container");
     previewContainer.createDiv("pdf-preview-loading").textContent = "Loading preview…";
@@ -133,6 +137,34 @@ export class ExportModal extends Modal {
     this.contentEl.empty();
   }
 
+  /** Render one checkbox per frontmatter field to include in the cover info block. */
+  private buildInfoBlockSection(contentEl: HTMLElement) {
+    const fm = this.app.metadataCache.getFileCache(this.file)?.frontmatter ?? {};
+    this.cachedFrontmatter = fm;
+    const keys = Object.keys(fm).filter(
+      (k) => k !== "rhino-pdf" && frontmatterToString(fm[k]) !== ""
+    );
+    if (keys.length === 0) return;
+
+    new Setting(contentEl)
+      .setName("Cover info block")
+      .setDesc("Frontmatter fields to list in a table on the cover page")
+      .setHeading();
+
+    for (const key of keys) {
+      new Setting(contentEl)
+        .setName(key)
+        .setDesc(frontmatterToString(fm[key]))
+        .addToggle((t) => {
+          t.setValue(this.infoBlockKeys.has(key)).onChange((v) => {
+            if (v) this.infoBlockKeys.add(key);
+            else this.infoBlockKeys.delete(key);
+            void this.updatePreview();
+          });
+        });
+    }
+  }
+
   private getVaultBasePath(): string {
     const adapter = this.app.vault.adapter;
     if (adapter instanceof FileSystemAdapter) {
@@ -158,6 +190,7 @@ export class ExportModal extends Modal {
     const mdContent = await this.app.vault.cachedRead(this.file);
 
     this.themeOverrides = parseThemeOverrides(mdContent);
+    this.cachedFrontmatter = this.app.metadataCache.getFileCache(this.file)?.frontmatter ?? {};
 
     let title = this.file.basename;
     for (const line of mdContent.split("\n")) {
@@ -173,7 +206,7 @@ export class ExportModal extends Modal {
     component.load();
     await MarkdownRenderer.render(
       this.app,
-      mdContent,
+      applyPageBreaks(mdContent),
       tempDiv,
       this.file.path,
       component
@@ -209,7 +242,9 @@ export class ExportModal extends Modal {
 
     const theme = this.getEffectiveTheme();
     const logoDataUri = await this.getLogoDataUri(theme.logoPath);
-    const html = buildHtml(this.cachedBodyHtml, this.cachedTitle, theme, logoDataUri);
+    const vars = makeDocVars(this.cachedTitle, this.file.basename, this.cachedFrontmatter);
+    const coverInfo = coverInfoRows(this.cachedFrontmatter, [...this.infoBlockKeys]);
+    const html = buildHtml(this.cachedBodyHtml, this.cachedTitle, theme, logoDataUri, vars, coverInfo);
 
     this.cleanupPreviewFile();
     const tempFile = path.join(os.tmpdir(), `rhino-preview-${Date.now()}.html`);
@@ -253,9 +288,12 @@ export class ExportModal extends Modal {
 
     const theme = this.getEffectiveTheme();
     const logoDataUri = await this.getLogoDataUri(theme.logoPath);
-    const html = buildHtml(this.cachedBodyHtml!, this.cachedTitle!, theme, logoDataUri);
+    const vars = makeDocVars(this.cachedTitle!, this.file.basename, this.cachedFrontmatter);
+    const coverInfo = coverInfoRows(this.cachedFrontmatter, [...this.infoBlockKeys]);
+    const html = buildHtml(this.cachedBodyHtml!, this.cachedTitle!, theme, logoDataUri, vars, coverInfo);
 
-    await generatePdf(html, result.filePath);
+    const meta = makePdfMetadata(this.cachedTitle!, this.cachedFrontmatter);
+    await generatePdf(html, result.filePath, meta);
     new Notice(`PDF exported → ${path.basename(result.filePath)}`);
   }
 

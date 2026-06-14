@@ -210,7 +210,7 @@ export class ThemedPdfSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Header text")
-      .setDesc("Supports {title} and {date}")
+      .setDesc("Variables: {title}, {filename}, {author}, {date}, {time}, {fm.key}")
       .addText((t) => {
         t.setPlaceholder("{title}")
           .setValue(theme.headerText)
@@ -232,7 +232,7 @@ export class ThemedPdfSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Footer text")
-      .setDesc("Supports {title} and {date}")
+      .setDesc("Variables: {title}, {filename}, {author}, {date}, {time}, {fm.key}")
       .addText((t) => {
         t.setValue(theme.footerText).onChange(async (v) => {
           theme.footerText = v;
@@ -268,6 +268,31 @@ export class ThemedPdfSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         });
         t.inputEl.rows = 6;
+      });
+
+    // Classification banner
+    new Setting(containerEl).setName("Classification banner").setHeading();
+
+    new Setting(containerEl)
+      .setName("Classification text")
+      .setDesc("Centered on every page (incl. cover). Leave empty to disable. Variables: {title}, {filename}, {author}, {date}, {time}, {fm.key}.")
+      .addText((t) => {
+        t.setPlaceholder("RESTRICTED")
+          .setValue(theme.classificationText)
+          .onChange(async (v) => {
+            theme.classificationText = v;
+            await this.plugin.saveSettings();
+          });
+      });
+
+    new Setting(containerEl)
+      .setName("Classification color")
+      .addText((t) => {
+        t.inputEl.type = "color";
+        t.setValue(theme.classificationColor).onChange(async (v) => {
+          theme.classificationColor = v;
+          await this.plugin.saveSettings();
+        });
       });
 
     // Watermark
@@ -404,6 +429,37 @@ export class ThemedPdfSettingTab extends PluginSettingTab {
             };
             await this.plugin.saveSettings();
           }
+        });
+      });
+
+    new Setting(containerEl)
+      .setName("Page break before headings")
+      .setDesc("Start a new page before each heading of the selected level(s)");
+
+    new Setting(containerEl)
+      .setName("Before heading 1")
+      .addToggle((t) => {
+        t.setValue(theme.pageBreakBeforeH1).onChange(async (v) => {
+          theme.pageBreakBeforeH1 = v;
+          await this.plugin.saveSettings();
+        });
+      });
+
+    new Setting(containerEl)
+      .setName("Before heading 2")
+      .addToggle((t) => {
+        t.setValue(theme.pageBreakBeforeH2).onChange(async (v) => {
+          theme.pageBreakBeforeH2 = v;
+          await this.plugin.saveSettings();
+        });
+      });
+
+    new Setting(containerEl)
+      .setName("Before heading 3")
+      .addToggle((t) => {
+        t.setValue(theme.pageBreakBeforeH3).onChange(async (v) => {
+          theme.pageBreakBeforeH3 = v;
+          await this.plugin.saveSettings();
         });
       });
   }

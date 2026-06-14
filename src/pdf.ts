@@ -5,6 +5,7 @@ import * as os from "os";
 import type { ElectronRemote, WebContents } from "electron";
 import electron from "electron";
 import { PDFDocument, PDFDict, PDFName, PDFString, PDFArray, PDFNumber } from "pdf-lib";
+import type { PdfMetadata } from "./types";
 
 function getElectronRemote(): ElectronRemote {
   const remote = electron.remote;
@@ -27,7 +28,8 @@ type PDFRef = ReturnType<PDFDocument["context"]["nextRef"]>;
  */
 export async function generatePdf(
   html: string,
-  outputPath: string
+  outputPath: string,
+  meta?: PdfMetadata
 ): Promise<void> {
   const tempDir = os.tmpdir();
   const tempFile = path.join(tempDir, `rhino-pdf-export-${Date.now()}.html`);
@@ -85,9 +87,17 @@ export async function generatePdf(
       );
     }
 
-    // Add PDF bookmarks if outline data is available (re-serializes the doc).
+    // Add bookmarks and/or document metadata (re-serializes the doc).
+    let modified = false;
     if (outline.length > 0) {
       applyPdfBookmarks(pdfDoc, outline);
+      modified = true;
+    }
+    if (meta) {
+      applyPdfMetadata(pdfDoc, meta);
+      modified = true;
+    }
+    if (modified) {
       pdfBytes = Buffer.from(await pdfDoc.save());
     }
 
@@ -112,6 +122,18 @@ async function printPdf(webContents: WebContents): Promise<Buffer> {
     preferCSSPageSize: true,
   });
   return Buffer.from(data);
+}
+
+/**
+ * Write document properties (title/author/subject/keywords + producer) into the PDF.
+ */
+function applyPdfMetadata(pdfDoc: PDFDocument, meta: PdfMetadata): void {
+  if (meta.title) pdfDoc.setTitle(meta.title);
+  if (meta.author) pdfDoc.setAuthor(meta.author);
+  if (meta.subject) pdfDoc.setSubject(meta.subject);
+  if (meta.keywords && meta.keywords.length > 0) pdfDoc.setKeywords(meta.keywords);
+  pdfDoc.setProducer("Rhino PDF Export for Obsidian");
+  pdfDoc.setCreator("Rhino PDF Export for Obsidian");
 }
 
 /**
