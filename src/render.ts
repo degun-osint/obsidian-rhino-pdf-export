@@ -96,6 +96,44 @@ body {
   page-break-after: always;
 }
 
+/* --- External link rendering --- */
+.rhino-url {
+  color: #666;
+  font-size: 0.85em;
+  word-break: break-all;
+}
+.rhino-footnote {
+  float: footnote;
+  font-size: 8px;
+  color: #555;
+  word-break: break-all;
+}
+/* in-text call marker: small superscript with a little space before */
+.rhino-footnote[data-footnote-call] {
+  font-size: 0.7em;
+  vertical-align: super;
+  line-height: 0;
+  margin-left: 1.5px;
+  word-break: normal;
+  color: inherit;
+  text-decoration: none;
+}
+${theme.numberHeadings ? `
+/* --- Automatic heading numbering (H2/H3, synced with the TOC) --- */
+body { counter-reset: rh2 rh3; }
+h2 { counter-increment: rh2; counter-reset: rh3; }
+h3 { counter-increment: rh3; }
+h2::before { content: counter(rh2) ". "; }
+h3::before { content: counter(rh2) "." counter(rh3) " "; }
+.toc h2 { counter-increment: none; }
+.toc h2::before { content: none; }
+.toc ul { counter-reset: rtoc2; }
+.toc li:not(.toc-h3) { counter-increment: rtoc2; counter-reset: rtoc3; }
+.toc li.toc-h3 { counter-increment: rtoc3; }
+.toc li:not(.toc-h3) > a::before { content: counter(rtoc2) ". "; }
+.toc li.toc-h3 > a::before { content: counter(rtoc2) "." counter(rtoc3) " "; }
+` : ""}
+
 /* --- Cover page --- */
 .cover {
   text-align: center;
@@ -473,13 +511,45 @@ function buildRunningHeader(theme: PdfTheme, vars: DocVars, logoDataUri: string)
 function buildRunningFooter(theme: PdfTheme, vars: DocVars): string {
   let footerContent = "";
   if (theme.showPagination) {
-    footerContent = '<span class="page-num"></span> / <span class="page-total"></span>';
+    footerContent = buildPagination(theme.paginationFormat);
   }
   if (theme.footerText) {
     const resolvedFooter = escapeHtml(resolveTextVariables(theme.footerText, vars));
     footerContent += footerContent ? ` — ${resolvedFooter}` : resolvedFooter;
   }
   return footerContent ? `<div class="running-footer">${footerContent}</div>` : "";
+}
+
+/**
+ * Build the pagination string from a format template. `{page}`/`{pages}` become
+ * paged.js CSS counters; any other text is shown literally.
+ */
+function buildPagination(format: string): string {
+  const tpl = format && format.trim() ? format : "{page} / {pages}";
+  return escapeHtml(tpl)
+    .replace(/\{page\}/gi, '<span class="page-num"></span>')
+    .replace(/\{pages\}/gi, '<span class="page-total"></span>');
+}
+
+/**
+ * Render external links according to the theme's urlDisplay mode:
+ * - "inline": append the URL in parentheses after the link
+ * - "footnote": move the URL into a paged.js footnote at the bottom of the page
+ * - "off": leave links unchanged
+ */
+function applyUrlDisplay(html: string, mode: PdfTheme["urlDisplay"]): string {
+  if (mode === "off") return html;
+  return html.replace(
+    /<a\s([^>]*?)href="(https?:\/\/[^"]+)"([^>]*?)>([\s\S]*?)<\/a>/gi,
+    (_m, pre: string, href: string, post: string, inner: string) => {
+      const anchor = `<a ${pre}href="${href}"${post}>${inner}</a>`;
+      if (mode === "inline") {
+        return `${anchor} <span class="rhino-url">(${escapeHtml(href)})</span>`;
+      }
+      // footnote
+      return `${anchor}<span class="rhino-footnote">${escapeHtml(href)}</span>`;
+    }
+  );
 }
 
 /**
@@ -622,6 +692,7 @@ export function buildHtml(
     processedBody = extracted.html;
     toc = buildTocHtml(extracted.headings, theme.tocTitle || "Table of Contents");
   }
+  processedBody = applyUrlDisplay(processedBody, theme.urlDisplay);
 
   const body = [
     buildRunningHeader(theme, vars, logoDataUri),
@@ -676,7 +747,7 @@ export function buildMergedHtml(
       ${sectionBody}
     </div>`;
   }).join("\n");
-  const sectionsHtml = processedSections;
+  const sectionsHtml = applyUrlDisplay(processedSections, theme.urlDisplay);
 
   // Table of contents for merged document
   let toc = "";
@@ -711,9 +782,13 @@ function extractHeadings(bodyHtml: string, counterStart = 0): {
   const html = bodyHtml.replace(/<(h[23])([^>]*)>([\s\S]*?)<\/\1>/gi, (_match: string, tag: string, attrs: string, content: string) => {
     const level = parseInt(tag[1]);
     const text = content.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, " ").trim();
-    const id = `toc-${counter++}`;
+    // Reuse an existing id if the heading already has one (avoids a duplicate id
+    // attribute, which would break the TOC anchor and target-counter).
+    const existing = attrs.match(/\sid="([^"]+)"/i);
+    const id = existing ? existing[1] : `toc-${counter++}`;
     headings.push({ level, text, id });
-    return `<${tag}${attrs} id="${id}">${content}</${tag}>`;
+    const newAttrs = existing ? attrs : `${attrs} id="${id}"`;
+    return `<${tag}${newAttrs}>${content}</${tag}>`;
   });
   return { html, headings, counterEnd: counter };
 }

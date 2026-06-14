@@ -2,15 +2,14 @@
 
 Export Markdown notes to beautifully styled PDFs with configurable themes: colors, logo, header/footer, watermark, PDF bookmarks, legal notice.
 
-## What's new in 1.1.0
+## What's new in 1.2.0
 
-- **PDF metadata** written into the document properties (title/author/subject/keywords) from the frontmatter
-- **Classification banner** centered on every page (e.g. "RESTRICTED")
-- **Manual page breaks** (`<!-- pagebreak -->`) and **automatic** ones before H1/H2/H3
-- **Extended text variables**: `{filename}`, `{author}`, `{time}`, `{fm.key}` in headers/footers/banner
-- **Cover info block**: list chosen frontmatter fields in a table on the cover
+- **External links**: show the URL inline `(https://…)` or as a real footnote
+- **Configurable pagination format** (`{page}` / `{pages}`)
+- **Automatic heading numbering** (1, 1.1, …), synced with the table of contents
+- **Clickable table of contents** in the exported PDF
 
-See the full [changelog](CHANGELOG.md).
+See the full [changelog](CHANGELOG.md) for earlier releases (PDF metadata, classification banner, page breaks, cover info block…).
 
 ## Features
 
@@ -21,7 +20,9 @@ See the full [changelog](CHANGELOG.md).
 - **Live preview**: PDF preview in the export modal before generating
 - **Batch export**: export all notes in a folder with one click (right-click on folder)
 - **Merge mode**: combine all notes in a folder into a single PDF with a full table of contents
-- **Table of contents**: auto-generated from H2/H3 headings, with page numbers and customizable title
+- **Table of contents**: auto-generated from H2/H3 headings, clickable, with page numbers and customizable title
+- **Heading numbering**: optional automatic numbering of H2/H3 (1, 1.1, …), synced with the table of contents
+- **External links**: optionally show link URLs inline or as page footnotes
 - **YAML frontmatter**: override theme settings per note via the `rhino-pdf` key
 - **Export overrides**: subtitle can be changed in the export modal without modifying the theme
 - **Obsidian callouts**: full callout rendering with colors and icons (all standard types + [Callout Manager](https://github.com/eth-p/obsidian-callout-manager) compatibility)
@@ -35,7 +36,7 @@ See the full [changelog](CHANGELOG.md).
 - **Cover info block**: pick frontmatter fields (author, date, …) to list in a table on the cover, via checkboxes in the export modal
 - **Edit theme shortcut**: "Edit theme" button in the export modal opens the theme editor directly
 - **Logo**: displayed on cover page + small version in the top-right corner of subsequent pages
-- **Pagination**: page number / total in footer (CSS counters via paged.js)
+- **Pagination**: configurable footer format (`{page}` / `{pages}`, via paged.js CSS counters)
 - **Legal notice**: optional block at the end of the document
 - **CSS Paged Media**: rendered via paged.js (running headers, margin boxes, page counters)
 - **Offline**: paged.js is bundled locally, no CDN required
@@ -145,6 +146,31 @@ case_id: AFFAIRE-2026-0042
 tags: [osint, report]
 ---
 ```
+
+### External links
+
+The **External links** theme option controls how external (`http`/`https`) link
+addresses are rendered:
+
+- **Keep as links** — unchanged (clickable, address hidden)
+- **Show inline** — appends ` (https://…)` after the link text
+- **As footnote** — moves the address to a numbered footnote at the bottom of the page
+
+### Pagination format
+
+The footer page number uses a template with `{page}` and `{pages}`, so you can set
+e.g. `{page} / {pages}`, `Page {page} of {pages}` or `- {page} -`.
+
+### Heading numbering
+
+Enable **Number headings** in the theme editor to automatically prefix H2/H3 with
+`1`, `1.1`, … The numbering is computed at print time and stays in sync with the
+table of contents.
+
+### Clickable table of contents
+
+Table-of-contents entries link to their heading and are clickable in the exported
+PDF (in addition to the PDF bookmarks/outline shown in a reader's sidebar).
 
 ## Callouts
 

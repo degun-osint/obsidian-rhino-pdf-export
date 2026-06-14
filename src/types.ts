@@ -23,7 +23,14 @@ export interface PdfTheme {
 
   // Footer
   showPagination: boolean;
+  paginationFormat: string; // e.g. "{page} / {pages}", "Page {page} of {pages}"
   footerText: string; // supports {title}, {date}
+
+  // External links: how to render the URL in the PDF
+  urlDisplay: "off" | "inline" | "footnote";
+
+  // Automatic heading numbering (H2/H3, synced with the table of contents)
+  numberHeadings: boolean;
 
   // Legal notice
   showLegal: boolean;

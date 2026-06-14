@@ -4,6 +4,21 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-06-14
+
+### Added
+- **External link display**: per-theme option to keep links as-is, show the URL
+  inline `(https://…)`, or move it to a real footnote at the bottom of the page
+  (via paged.js footnotes).
+- **Configurable pagination format**: footer page number uses a `{page}`/`{pages}`
+  template, e.g. "Page {page} of {pages}".
+- **Automatic heading numbering**: optional H2/H3 numbering (1, 1.1, …), kept in
+  sync with the table of contents.
+
+### Fixed
+- Table of contents links are now reliably clickable: headings that already carry
+  an `id` reuse it instead of getting a duplicate `id` attribute.
+
 ## [1.1.1] - 2026-06-14
 
 ### Changed
@@ -62,6 +77,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   PDF bookmarks, custom themes (JSON import/export), batch and merge export, and
   per-note `rhino-pdf` frontmatter overrides.
 
+[1.2.0]: https://github.com/degun-osint/obsidian-rhino-pdf-export/releases/tag/1.2.0
 [1.1.1]: https://github.com/degun-osint/obsidian-rhino-pdf-export/releases/tag/1.1.1
 [1.1.0]: https://github.com/degun-osint/obsidian-rhino-pdf-export/releases/tag/1.1.0
 [1.0.2]: https://github.com/degun-osint/obsidian-rhino-pdf-export/releases/tag/1.0.2

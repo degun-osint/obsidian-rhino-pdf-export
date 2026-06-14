@@ -181,6 +181,16 @@ export class ThemedPdfSettingTab extends PluginSettingTab {
       });
 
     new Setting(containerEl)
+      .setName("Number headings")
+      .setDesc("Automatically number H2/H3 headings (1, 1.1, …), synced with the table of contents")
+      .addToggle((t) => {
+        t.setValue(theme.numberHeadings).onChange(async (v) => {
+          theme.numberHeadings = v;
+          await this.plugin.saveSettings();
+        });
+      });
+
+    new Setting(containerEl)
       .setName("Subtitle")
       .addText((t) => {
         t.setValue(theme.subtitle).onChange(async (v) => {
@@ -231,11 +241,34 @@ export class ThemedPdfSettingTab extends PluginSettingTab {
       });
 
     new Setting(containerEl)
+      .setName("Pagination format")
+      .setDesc("Use {page} and {pages}, e.g. \"{page} / {pages}\" or \"Page {page} of {pages}\"")
+      .addText((t) => {
+        t.setValue(theme.paginationFormat).onChange(async (v) => {
+          theme.paginationFormat = v;
+          await this.plugin.saveSettings();
+        });
+      });
+
+    new Setting(containerEl)
       .setName("Footer text")
       .setDesc("Variables: {title}, {filename}, {author}, {date}, {time}, {fm.key}")
       .addText((t) => {
         t.setValue(theme.footerText).onChange(async (v) => {
           theme.footerText = v;
+          await this.plugin.saveSettings();
+        });
+      });
+
+    new Setting(containerEl)
+      .setName("External links")
+      .setDesc("How to display the address of external links in the PDF")
+      .addDropdown((dd) => {
+        dd.addOption("off", "Keep as links");
+        dd.addOption("inline", "Show inline");
+        dd.addOption("footnote", "As footnote");
+        dd.setValue(theme.urlDisplay).onChange(async (v) => {
+          theme.urlDisplay = v as PdfTheme["urlDisplay"];
           await this.plugin.saveSettings();
         });
       });
