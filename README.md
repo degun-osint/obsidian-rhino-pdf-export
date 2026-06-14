@@ -128,6 +128,13 @@ src/
 
 Inspired by [Better Export PDF](https://github.com/l1xnan/obsidian-better-export-pdf).
 
+This plugin bundles and redistributes the following MIT-licensed libraries:
+
+- [paged.js](https://pagedjs.org) v0.4.3 — CSS Paged Media polyfill © 2018 Adam Hyde
+- [pdf-lib](https://github.com/Hopding/pdf-lib) v1.17.1 — PDF generation © 2019 Andrew Dillon
+
+Their full license texts are reproduced in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
 ## License
 
 GPLv3
