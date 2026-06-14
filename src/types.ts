@@ -45,6 +45,9 @@ export interface PdfTheme {
   pageBreakBeforeH2: boolean;
   pageBreakBeforeH3: boolean;
 
+  // Write PDF document properties (title/author/subject/keywords) from frontmatter
+  includeMetadata: boolean;
+
   // Classification banner (centered, repeated on every page incl. cover)
   classificationText: string; // supports {title}, {date}, {author}, {fm.x}, …
   classificationColor: string;

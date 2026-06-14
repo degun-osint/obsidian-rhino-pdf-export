@@ -292,7 +292,9 @@ export class ExportModal extends Modal {
     const coverInfo = coverInfoRows(this.cachedFrontmatter, [...this.infoBlockKeys]);
     const html = buildHtml(this.cachedBodyHtml!, this.cachedTitle!, theme, logoDataUri, vars, coverInfo);
 
-    const meta = makePdfMetadata(this.cachedTitle!, this.cachedFrontmatter);
+    const meta = theme.includeMetadata
+      ? makePdfMetadata(this.cachedTitle!, this.cachedFrontmatter)
+      : undefined;
     await generatePdf(html, result.filePath, meta);
     new Notice(`PDF exported → ${path.basename(result.filePath)}`);
   }

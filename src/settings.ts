@@ -270,6 +270,16 @@ export class ThemedPdfSettingTab extends PluginSettingTab {
         t.inputEl.rows = 6;
       });
 
+    new Setting(containerEl)
+      .setName("PDF metadata")
+      .setDesc("Write title/author/subject/keywords into the PDF properties (from frontmatter)")
+      .addToggle((t) => {
+        t.setValue(theme.includeMetadata).onChange(async (v) => {
+          theme.includeMetadata = v;
+          await this.plugin.saveSettings();
+        });
+      });
+
     // Classification banner
     new Setting(containerEl).setName("Classification banner").setHeading();
 

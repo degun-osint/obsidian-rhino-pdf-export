@@ -28,7 +28,7 @@ See the full [changelog](CHANGELOG.md).
 - **Watermark**: optional text watermark on every page (configurable text, color, opacity, font size, rotation)
 - **Dynamic headers/footers**: header, footer and classification text support `{title}`, `{filename}`, `{author}`, `{date}`, `{time}` and `{fm.key}` (any frontmatter field), resolved at export time
 - **PDF bookmarks**: clickable outline (H1/H2/H3) generated automatically in the PDF, visible in any PDF reader's sidebar
-- **PDF metadata**: title/author/subject/keywords written into the document properties, read from the note frontmatter
+- **PDF metadata** (optional, per theme): title/author/subject/keywords written into the document properties, read from the note frontmatter
 - **Classification banner**: optional text (e.g. "RESTRICTED") centered on every page, including the cover
 - **Manual page breaks**: insert `<!-- pagebreak -->` in a note to force a new page
 - **Automatic page breaks**: optionally start a new page before every H1/H2/H3 (per theme)
@@ -124,7 +124,7 @@ Set **Classification text** in the theme editor (or `classificationText` in fron
 
 ### PDF metadata
 
-The generated PDF's document properties are filled from the note frontmatter:
+Enable **PDF metadata** in the theme editor to fill the generated PDF's document properties from the note frontmatter (off by default):
 
 | PDF property | Frontmatter field |
 |---|---|

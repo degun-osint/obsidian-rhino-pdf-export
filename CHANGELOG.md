@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2026-06-14
+
+### Changed
+- **PDF metadata** is now opt-in per theme (toggle in the theme editor, off by
+  default). Previously it was always written, including the producer signature.
+
 ## [1.1.0] - 2026-06-14
 
 ### Added
@@ -56,6 +62,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   PDF bookmarks, custom themes (JSON import/export), batch and merge export, and
   per-note `rhino-pdf` frontmatter overrides.
 
+[1.1.1]: https://github.com/degun-osint/obsidian-rhino-pdf-export/releases/tag/1.1.1
 [1.1.0]: https://github.com/degun-osint/obsidian-rhino-pdf-export/releases/tag/1.1.0
 [1.0.2]: https://github.com/degun-osint/obsidian-rhino-pdf-export/releases/tag/1.0.2
 [1.0.1]: https://github.com/degun-osint/obsidian-rhino-pdf-export/releases/tag/1.0.1

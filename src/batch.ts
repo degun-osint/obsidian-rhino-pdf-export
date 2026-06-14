@@ -350,7 +350,8 @@ export class BatchExportModal extends Modal {
     const mergedTitle = folderName;
     const vars = makeDocVars(mergedTitle, folderName, {});
     const html = buildMergedHtml(sections, mergedTitle, theme, logoDataUri, vars);
-    await generatePdf(html, result.filePath, makePdfMetadata(mergedTitle, {}));
+    const meta = theme.includeMetadata ? makePdfMetadata(mergedTitle, {}) : undefined;
+    await generatePdf(html, result.filePath, meta);
 
     progressBar.value = mdFiles.length;
     new Notice(`Merged PDF exported → ${path.basename(result.filePath)} (${sections.length} notes)`);
@@ -421,6 +422,7 @@ export class BatchExportModal extends Modal {
     const pdfName = file.basename + ".pdf";
     const fullPath = path.join(outputDir, pdfName);
 
-    await generatePdf(html, fullPath, makePdfMetadata(title, fm));
+    const meta = theme.includeMetadata ? makePdfMetadata(title, fm) : undefined;
+    await generatePdf(html, fullPath, meta);
   }
 }
