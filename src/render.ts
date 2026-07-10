@@ -708,16 +708,52 @@ export function buildHtml(
 }
 
 /**
+ * Per-section page-break settings, resolved from each note's own frontmatter.
+ */
+export interface MergedSection {
+  title: string;
+  bodyHtml: string;
+  pageBreaks?: { h1: boolean; h2: boolean; h3: boolean };
+}
+
+/**
+ * A merged document has a single stylesheet, so the theme's global
+ * `h2 { break-before: page }` cannot vary per note. Emit one scoped rule per
+ * section instead. The section's own title is excluded: it already starts a
+ * page, and breaking before it would leave a blank one.
+ */
+function buildSectionPageBreakCss(sections: MergedSection[]): string {
+  const rules: string[] = [];
+  sections.forEach((s, i) => {
+    if (!s.pageBreaks) return;
+    const scope = `.merged-section[data-sec="${i}"]`;
+    const decl = "{ break-before: page; page-break-before: always; }";
+    if (s.pageBreaks.h1) rules.push(`${scope} h1 ${decl}`);
+    if (s.pageBreaks.h2) rules.push(`${scope} h2:not(.merged-section-title) ${decl}`);
+    if (s.pageBreaks.h3) rules.push(`${scope} h3 ${decl}`);
+  });
+  if (rules.length === 0) return "";
+  return `\n/* --- Per-note page breaks --- */\n${rules.join("\n")}\n`;
+}
+
+/**
  * Build a merged HTML document containing multiple notes, each starting on a new page.
  */
 export function buildMergedHtml(
-  sections: { title: string; bodyHtml: string }[],
+  sections: MergedSection[],
   mergedTitle: string,
   theme: PdfTheme,
   logoDataUri: string,
   vars: DocVars
 ): string {
-  const css = buildCss(theme);
+  // Neutralize the global break rules; each section carries its own below.
+  const cssTheme: PdfTheme = {
+    ...theme,
+    pageBreakBeforeH1: false,
+    pageBreakBeforeH2: false,
+    pageBreakBeforeH3: false,
+  };
+  const css = buildCss(cssTheme) + buildSectionPageBreakCss(sections);
 
   // Build sections with page breaks between each note
   // Extract all H2/H3 headings from each section for a full TOC
@@ -742,8 +778,8 @@ export function buildMergedHtml(
     }
 
     const pageBreak = i > 0 ? ' style="page-break-before:always;"' : "";
-    return `<div class="merged-section"${pageBreak}>
-      <h2 id="${sectionId}">${escapeHtml(s.title)}</h2>
+    return `<div class="merged-section" data-sec="${i}"${pageBreak}>
+      <h2 id="${sectionId}" class="merged-section-title">${escapeHtml(s.title)}</h2>
       ${sectionBody}
     </div>`;
   }).join("\n");
@@ -873,7 +909,12 @@ function buildOutlineScript(): string {
 
 function buildWatermarkScript(theme: PdfTheme): string {
   if (!theme.watermarkText) return "";
-  const text = theme.watermarkText.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  // `<` is escaped too: a watermark containing "</script>" would otherwise
+  // terminate the inline script that injects it.
+  const text = theme.watermarkText
+    .replace(/\\/g, "\\\\")
+    .replace(/'/g, "\\'")
+    .replace(/</g, "\\x3c");
   return `
         var boxes = document.querySelectorAll(".pagedjs_pagebox");
         for (var i = 0; i < boxes.length; i++) {

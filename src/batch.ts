@@ -9,16 +9,43 @@ import {
   Component,
   FileSystemAdapter,
 } from "obsidian";
-import type { PdfTheme, PluginSettings } from "./types";
+import type { DocConfig, PdfTheme, PluginSettings } from "./types";
 import { BUILTIN_THEMES } from "./themes";
-import { buildHtml, buildMergedHtml, resolveImagePaths, makeDocVars, makePdfMetadata, applyPageBreaks } from "./render";
+import {
+  buildHtml,
+  buildMergedHtml,
+  resolveImagePaths,
+  makeDocVars,
+  makePdfMetadata,
+  applyPageBreaks,
+  coverInfoRows,
+  type MergedSection,
+} from "./render";
 import { generatePdf } from "./pdf";
-import { readDocConfig, resolveTheme } from "./frontmatter";
+import { readDocConfig, resolveBaseTheme, resolveCoverInfoKeys, resolveTheme } from "./frontmatter";
+import { createDocConfigState, renderDocConfigSection, type DocConfigState, type DocField } from "./doc-config-ui";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 import type { ElectronRemote } from "electron";
 import electron from "electron";
+
+/**
+ * Same overrides as the single-note modal, minus the cover info block: there is
+ * no single note to read frontmatter keys from.
+ */
+const BATCH_FIELDS: DocField[] = [
+  "subtitle",
+  "showCover",
+  "showToc",
+  "headerText",
+  "footerText",
+  "watermarkText",
+  "classificationText",
+];
+
+const EMPTY_DOC_CONFIG: DocConfig = { overrides: {}, ignoredKeys: [] };
+const PREVIEW_DEBOUNCE_MS = 250;
 
 function getElectronRemote(): ElectronRemote {
   const remote = electron.remote;
@@ -31,13 +58,15 @@ export class BatchExportModal extends Modal {
   private folder: TFolder;
   private saveSettings: () => Promise<void>;
   private selectedTheme: PdfTheme;
+  private state: DocConfigState = createDocConfigState();
   private mergeMode = false;
-  private overrideSubtitle = "";
-  private overrideFooterText = "";
+  private recursive = false;
+  private docConfigEl: HTMLElement | null = null;
+  private docConfigOpen = false;
   private previewWebview: HTMLElement | null = null;
   private previewTempFile: string | null = null;
-  private previewReady = false;
-  private recursive = false;
+  private previewTimer: number | null = null;
+  private previewGen = 0;
 
   constructor(
     app: App,
@@ -50,10 +79,13 @@ export class BatchExportModal extends Modal {
     this.settings = settings;
     this.saveSettings = saveSettings;
 
-    const allThemes = [...BUILTIN_THEMES, ...this.settings.themes];
+    const allThemes = this.allThemes();
     this.selectedTheme =
-      allThemes.find((t) => t.id === this.settings.lastUsedThemeId) ||
-      allThemes[0];
+      allThemes.find((t) => t.id === this.settings.lastUsedThemeId) || allThemes[0];
+  }
+
+  private allThemes(): PdfTheme[] {
+    return [...BUILTIN_THEMES, ...this.settings.themes];
   }
 
   onOpen() {
@@ -65,11 +97,11 @@ export class BatchExportModal extends Modal {
     new Setting(contentEl).setName("Batch export").setHeading();
 
     const descEl = contentEl.createEl("p", {
-      text: `${mdFiles.length} note${mdFiles.length > 1 ? "s" : ""} in "${this.folder.path || "/"}"`,
+      text: this.fileCountLabel(mdFiles.length),
       cls: "setting-item-description",
     });
 
-    const allThemes = [...BUILTIN_THEMES, ...this.settings.themes];
+    const allThemes = this.allThemes();
 
     new Setting(contentEl)
       .setName("Theme")
@@ -78,7 +110,8 @@ export class BatchExportModal extends Modal {
         dd.setValue(this.selectedTheme.id);
         dd.onChange((val) => {
           this.selectedTheme = allThemes.find((t) => t.id === val) || allThemes[0];
-          void this.updatePreview(mdFiles);
+          this.renderDocConfig();
+          this.schedulePreview();
         });
       });
 
@@ -86,8 +119,7 @@ export class BatchExportModal extends Modal {
       .setName("Merge into single PDF")
       .setDesc("Combine all notes into one PDF instead of one per note")
       .addToggle((toggle) => {
-        toggle.setValue(this.mergeMode);
-        toggle.onChange((val) => {
+        toggle.setValue(this.mergeMode).onChange((val) => {
           this.mergeMode = val;
         });
       });
@@ -96,45 +128,20 @@ export class BatchExportModal extends Modal {
       .setName("Include subfolders")
       .setDesc("Recursively include notes from subfolders")
       .addToggle((toggle) => {
-        toggle.setValue(this.recursive);
-        toggle.onChange((val) => {
+        toggle.setValue(this.recursive).onChange((val) => {
           this.recursive = val;
-          const files = this.getMdFiles();
-          descEl.textContent = `${files.length} note${files.length > 1 ? "s" : ""} in "${this.folder.path || "/"}"`;
-          void this.updatePreview(files);
+          descEl.textContent = this.fileCountLabel(this.getMdFiles().length);
+          this.schedulePreview();
         });
       });
 
-    new Setting(contentEl)
-      .setName("Subtitle override")
-      .setDesc("Leave empty to use theme default")
-      .addText((t) => {
-        t.setPlaceholder(this.selectedTheme.subtitle || "(theme default)")
-          .setValue(this.overrideSubtitle)
-          .onChange((v) => {
-            this.overrideSubtitle = v;
-            void this.updatePreview(mdFiles);
-          });
-      });
+    this.docConfigEl = contentEl.createDiv();
+    this.renderDocConfig();
 
-    new Setting(contentEl)
-      .setName("Footer text override")
-      .setDesc("Leave empty to use theme default")
-      .addText((t) => {
-        t.setPlaceholder(this.selectedTheme.footerText || "(theme default)")
-          .setValue(this.overrideFooterText)
-          .onChange((v) => {
-            this.overrideFooterText = v;
-            void this.updatePreview(mdFiles);
-          });
-      });
-
-    // Preview container
     const previewContainer = contentEl.createDiv("pdf-preview-container");
     previewContainer.addClass("is-short");
     previewContainer.createDiv("pdf-preview-loading").textContent = "Loading preview (1st note)…";
 
-    // Progress bar
     const progressEl = contentEl.createDiv("batch-progress");
     const progressBar = progressEl.createEl("progress");
     const progressText = progressEl.createDiv("batch-progress-text");
@@ -161,8 +168,7 @@ export class BatchExportModal extends Modal {
       });
     });
 
-    // Init preview with first file
-    void this.initPreview(previewContainer, mdFiles);
+    void this.initPreview(previewContainer);
   }
 
   onClose() {
@@ -170,15 +176,51 @@ export class BatchExportModal extends Modal {
     this.contentEl.empty();
   }
 
+  private fileCountLabel(count: number): string {
+    return `${count} note${count > 1 ? "s" : ""} in "${this.folder.path || "/"}"`;
+  }
+
+  private renderDocConfig() {
+    if (!this.docConfigEl) return;
+    this.docConfigEl.empty();
+    renderDocConfigSection({
+      container: this.docConfigEl,
+      app: this.app,
+      file: null,
+      baseTheme: this.selectedTheme,
+      docConfig: EMPTY_DOC_CONFIG,
+      state: this.state,
+      fields: BATCH_FIELDS,
+      open: this.docConfigOpen,
+      onToggle: (open) => { this.docConfigOpen = open; },
+      onChange: () => this.schedulePreview(),
+    });
+  }
+
   private getVaultBasePath(): string {
     const adapter = this.app.vault.adapter;
-    if (adapter instanceof FileSystemAdapter) {
-      return adapter.getBasePath();
-    }
+    if (adapter instanceof FileSystemAdapter) return adapter.getBasePath();
     return "";
   }
 
-  private async initPreview(container: HTMLElement, mdFiles: TFile[]) {
+  /** Theme used for the shared stylesheet and for notes without frontmatter. */
+  private getEffectiveTheme(): PdfTheme {
+    return resolveTheme(this.selectedTheme, EMPTY_DOC_CONFIG, this.state.edits);
+  }
+
+  /**
+   * Resolve one note against the batch overrides. Precedence matches the
+   * single-note modal: what you typed in this dialog wins over the note's
+   * frontmatter, which wins over the theme.
+   */
+  private resolveForFile(file: TFile): { theme: PdfTheme; docConfig: DocConfig } {
+    const docConfig = readDocConfig(this.app, file);
+    const base = resolveBaseTheme(this.allThemes(), docConfig, this.selectedTheme);
+    return { theme: resolveTheme(base, docConfig, this.state.edits), docConfig };
+  }
+
+  private async initPreview(container: HTMLElement) {
+    const mdFiles = this.getMdFiles();
     if (mdFiles.length === 0) return;
 
     const webview = activeDocument.createElement("webview");
@@ -187,45 +229,49 @@ export class BatchExportModal extends Modal {
     this.previewWebview = webview;
     container.empty();
     container.appendChild(webview);
-    this.previewReady = true;
-    await this.updatePreview(mdFiles);
+    await this.updatePreview();
   }
 
-  private async updatePreview(mdFiles?: TFile[]) {
-    if (!this.previewWebview || !this.previewReady) return;
-    const files = mdFiles || this.getMdFiles();
+  private schedulePreview() {
+    if (this.previewTimer !== null) window.clearTimeout(this.previewTimer);
+    this.previewTimer = window.setTimeout(() => {
+      this.previewTimer = null;
+      void this.updatePreview();
+    }, PREVIEW_DEBOUNCE_MS);
+  }
+
+  private async updatePreview() {
+    if (!this.previewWebview) return;
+    const files = this.getMdFiles();
     if (files.length === 0) return;
 
+    const gen = ++this.previewGen;
     const firstFile = files[0];
-    const theme = this.getEffectiveTheme();
+    const { theme, docConfig } = this.resolveForFile(firstFile);
 
     const mdContent = await this.app.vault.cachedRead(firstFile);
-    let title = firstFile.basename;
-    for (const line of mdContent.split("\n")) {
-      if (line.startsWith("# ")) {
-        title = line.replace(/^#+\s*/, "").trim();
-        break;
-      }
-    }
+    if (gen !== this.previewGen) return;
 
-    const tempDiv = createDiv();
-    const component = new Component();
-    component.load();
-    await MarkdownRenderer.render(this.app, applyPageBreaks(mdContent), tempDiv, firstFile.path, component);
-    const vaultBasePath = this.getVaultBasePath();
-    const bodyHtml = resolveImagePaths(tempDiv.innerHTML, vaultBasePath);
-    component.unload();
-
+    const title = extractTitle(mdContent, firstFile.basename);
+    const bodyHtml = await this.renderMarkdown(mdContent, firstFile.path);
     const logoDataUri = await this.loadLogoDataUri(theme.logoPath);
+    if (gen !== this.previewGen) return;
+
     const fm = this.app.metadataCache.getFileCache(firstFile)?.frontmatter ?? {};
     const vars = makeDocVars(title, firstFile.basename, fm);
-    const html = buildHtml(bodyHtml, title, theme, logoDataUri, vars);
+    const coverInfo = coverInfoRows(fm, resolveCoverInfoKeys(theme, docConfig));
+    const html = buildHtml(bodyHtml, title, theme, logoDataUri, vars, coverInfo);
+
+    const tempFile = path.join(os.tmpdir(), `rhino-batch-preview-${gen}-${Date.now()}.html`);
+    fs.writeFileSync(tempFile, html, "utf-8");
+
+    if (gen !== this.previewGen) {
+      try { fs.unlinkSync(tempFile); } catch { /* cleanup non-critical */ }
+      return;
+    }
 
     this.cleanupPreviewFile();
-    const tempFile = path.join(os.tmpdir(), `rhino-batch-preview-${Date.now()}.html`);
-    fs.writeFileSync(tempFile, html, "utf-8");
     this.previewTempFile = tempFile;
-
     this.previewWebview.setAttribute("src", `file://${tempFile}`);
   }
 
@@ -237,16 +283,23 @@ export class BatchExportModal extends Modal {
   }
 
   private cleanupPreview() {
+    if (this.previewTimer !== null) {
+      window.clearTimeout(this.previewTimer);
+      this.previewTimer = null;
+    }
+    this.previewGen++;
     this.cleanupPreviewFile();
     this.previewWebview = null;
-    this.previewReady = false;
   }
 
-  private getEffectiveTheme(): PdfTheme {
-    const theme = { ...this.selectedTheme };
-    if (this.overrideSubtitle) theme.subtitle = this.overrideSubtitle;
-    if (this.overrideFooterText) theme.footerText = this.overrideFooterText;
-    return theme;
+  private async renderMarkdown(mdContent: string, sourcePath: string): Promise<string> {
+    const tempDiv = createDiv();
+    const component = new Component();
+    component.load();
+    await MarkdownRenderer.render(this.app, applyPageBreaks(mdContent), tempDiv, sourcePath, component);
+    const html = resolveImagePaths(tempDiv.innerHTML, this.getVaultBasePath());
+    component.unload();
+    return html;
   }
 
   private async exportSeparate(
@@ -256,12 +309,15 @@ export class BatchExportModal extends Modal {
     progressText: HTMLElement
   ) {
     const result = await getElectronRemote().dialog.showOpenDialog({
-      defaultPath: this.getVaultBasePath(),
+      defaultPath: this.settings.lastOutputDir || this.getVaultBasePath(),
       properties: ["openDirectory", "createDirectory"],
       title: "Choose output folder for PDFs",
     });
     if (result.canceled || !result.filePaths.length) return;
     const outputDir = result.filePaths[0];
+
+    this.settings.lastOutputDir = outputDir;
+    await this.saveSettings();
 
     progressEl.addClass("is-active");
     progressBar.max = mdFiles.length;
@@ -298,7 +354,7 @@ export class BatchExportModal extends Modal {
   ) {
     const folderName = this.folder.name || "vault";
     const defaultPath = path.join(
-      this.getVaultBasePath(),
+      this.settings.lastOutputDir || this.getVaultBasePath(),
       `${folderName}.pdf`
     );
     const result = await getElectronRemote().dialog.showSaveDialog({
@@ -307,13 +363,16 @@ export class BatchExportModal extends Modal {
     });
     if (result.canceled || !result.filePath) return;
 
+    this.settings.lastOutputDir = path.dirname(result.filePath);
+    await this.saveSettings();
+
     progressEl.addClass("is-active");
     progressBar.max = mdFiles.length;
 
     const theme = this.getEffectiveTheme();
     const logoDataUri = await this.loadLogoDataUri(theme.logoPath);
 
-    const sections: { title: string; bodyHtml: string }[] = [];
+    const sections: MergedSection[] = [];
 
     for (let i = 0; i < mdFiles.length; i++) {
       const file = mdFiles[i];
@@ -322,24 +381,21 @@ export class BatchExportModal extends Modal {
 
       try {
         const mdContent = await this.app.vault.cachedRead(file);
+        const title = extractTitle(mdContent, file.basename);
+        const bodyHtml = await this.renderMarkdown(mdContent, file.path);
 
-        let title = file.basename;
-        for (const line of mdContent.split("\n")) {
-          if (line.startsWith("# ")) {
-            title = line.replace(/^#+\s*/, "").trim();
-            break;
-          }
-        }
-
-        const tempDiv = createDiv();
-        const component = new Component();
-        component.load();
-        await MarkdownRenderer.render(this.app, applyPageBreaks(mdContent), tempDiv, file.path, component);
-        const vaultBase = this.getVaultBasePath();
-        const bodyHtml = resolveImagePaths(tempDiv.innerHTML, vaultBase);
-        component.unload();
-
-        sections.push({ title, bodyHtml });
+        // A merged PDF has one stylesheet, so only the per-note page breaks can
+        // vary; colors, fonts and margins come from the batch theme.
+        const noteTheme = resolveTheme(theme, readDocConfig(this.app, file));
+        sections.push({
+          title,
+          bodyHtml,
+          pageBreaks: {
+            h1: noteTheme.pageBreakBeforeH1,
+            h2: noteTheme.pageBreakBeforeH2,
+            h3: noteTheme.pageBreakBeforeH3,
+          },
+        });
       } catch (err: unknown) {
         console.error(`Rhino PDF: render error ${file.path}:`, err);
       }
@@ -357,6 +413,10 @@ export class BatchExportModal extends Modal {
     new Notice(`Merged PDF exported → ${path.basename(result.filePath)} (${sections.length} notes)`);
   }
 
+  /**
+   * Notes sort by their `rhino-pdf.order` frontmatter key, then alphabetically.
+   * Without one they come last, preserving the previous behaviour.
+   */
   private getMdFiles(): TFile[] {
     const files: TFile[] = [];
     const collect = (folder: TFolder) => {
@@ -369,7 +429,18 @@ export class BatchExportModal extends Modal {
       }
     };
     collect(this.folder);
-    return files.sort((a, b) => a.basename.localeCompare(b.basename));
+
+    const orders = new Map<string, number>();
+    for (const f of files) {
+      orders.set(f.path, readDocConfig(this.app, f).order ?? Number.POSITIVE_INFINITY);
+    }
+
+    return files.sort((a, b) => {
+      const oa = orders.get(a.path)!;
+      const ob = orders.get(b.path)!;
+      if (oa !== ob) return oa < ob ? -1 : 1;
+      return a.basename.localeCompare(b.basename);
+    });
   }
 
   private async loadLogoDataUri(logoPath: string): Promise<string> {
@@ -388,38 +459,27 @@ export class BatchExportModal extends Modal {
 
   private async exportFile(file: TFile, outputDir: string) {
     const mdContent = await this.app.vault.cachedRead(file);
+    const { theme, docConfig } = this.resolveForFile(file);
 
-    const docConfig = readDocConfig(this.app, file);
-    const theme = resolveTheme(this.getEffectiveTheme(), docConfig);
-
-    let title = file.basename;
-    for (const line of mdContent.split("\n")) {
-      if (line.startsWith("# ")) {
-        title = line.replace(/^#+\s*/, "").trim();
-        break;
-      }
-    }
-
-    const tempDiv = createDiv();
-    const component = new Component();
-    component.load();
-    await MarkdownRenderer.render(this.app, applyPageBreaks(mdContent), tempDiv, file.path, component);
-    const vaultBase = this.getVaultBasePath();
-    const bodyHtml = resolveImagePaths(tempDiv.innerHTML, vaultBase);
-    component.unload();
-
-    let logoDataUri = "";
-    if (theme.logoPath) {
-      logoDataUri = await this.loadLogoDataUri(theme.logoPath);
-    }
+    const title = extractTitle(mdContent, file.basename);
+    const bodyHtml = await this.renderMarkdown(mdContent, file.path);
+    const logoDataUri = await this.loadLogoDataUri(theme.logoPath);
 
     const fm = this.app.metadataCache.getFileCache(file)?.frontmatter ?? {};
     const vars = makeDocVars(title, file.basename, fm);
-    const html = buildHtml(bodyHtml, title, theme, logoDataUri, vars);
-    const pdfName = file.basename + ".pdf";
-    const fullPath = path.join(outputDir, pdfName);
+    const coverInfo = coverInfoRows(fm, resolveCoverInfoKeys(theme, docConfig));
+    const html = buildHtml(bodyHtml, title, theme, logoDataUri, vars, coverInfo);
+    const fullPath = path.join(outputDir, file.basename + ".pdf");
 
     const meta = theme.includeMetadata ? makePdfMetadata(title, fm) : undefined;
     await generatePdf(html, fullPath, meta);
   }
+}
+
+/** The first `# H1` of a note, falling back to its filename. */
+function extractTitle(mdContent: string, fallback: string): string {
+  for (const line of mdContent.split("\n")) {
+    if (line.startsWith("# ")) return line.replace(/^#+\s*/, "").trim();
+  }
+  return fallback;
 }
