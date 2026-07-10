@@ -4,7 +4,10 @@ import { DEFAULT_SETTINGS } from "./types";
 import { ThemedPdfSettingTab } from "./settings";
 import { ExportModal } from "./modal";
 import { BatchExportModal } from "./batch";
-import { createBlankTheme } from "./themes";
+import { BUILTIN_THEMES, createBlankTheme } from "./themes";
+import { readDocConfig, resolveBaseTheme, resolveCoverInfoKeys, resolveTheme } from "./frontmatter";
+import { exportNoteToPdf, getVaultBasePath } from "./export";
+import * as path from "path";
 
 export default class RhinoPdfExport extends Plugin {
   settings: PluginSettings = DEFAULT_SETTINGS;
@@ -27,6 +30,17 @@ export default class RhinoPdfExport extends Plugin {
             this.manifest.id
           ).open();
         }
+        return true;
+      },
+    });
+
+    this.addCommand({
+      id: "export-themed-pdf-quick",
+      name: "Export note as PDF with last settings",
+      checkCallback: (checking: boolean) => {
+        const file = this.app.workspace.getActiveFile();
+        if (!file || file.extension !== "md") return false;
+        if (!checking) void this.quickExport(file);
         return true;
       },
     });
@@ -68,6 +82,41 @@ export default class RhinoPdfExport extends Plugin {
     );
 
     this.addSettingTab(new ThemedPdfSettingTab(this.app, this));
+  }
+
+  /**
+   * Export without opening the modal: the theme pinned by the note's
+   * `rhino-pdf.theme`, else the last one used. Writes next to the note, or to
+   * the last folder an export was sent to, overwriting any file of that name.
+   */
+  private async quickExport(file: TFile) {
+    const allThemes: PdfTheme[] = [...BUILTIN_THEMES, ...this.settings.themes];
+    const docConfig = readDocConfig(this.app, file);
+    const fallback =
+      allThemes.find((t) => t.id === this.settings.lastUsedThemeId) || allThemes[0];
+    const base = resolveBaseTheme(allThemes, docConfig, fallback);
+
+    const outputDir =
+      this.settings.lastOutputDir ||
+      path.join(getVaultBasePath(this.app), file.parent?.path ?? "");
+    const outputPath = path.join(outputDir, file.basename + ".pdf");
+
+    const notice = new Notice(`Exporting ${file.basename}…`, 0);
+    try {
+      await exportNoteToPdf({
+        app: this.app,
+        file,
+        theme: resolveTheme(base, docConfig),
+        coverInfoKeys: resolveCoverInfoKeys(base, docConfig),
+        outputPath,
+      });
+      new Notice(`PDF exported → ${outputPath}`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      new Notice(`Export error: ${message}`);
+    } finally {
+      notice.hide();
+    }
   }
 
   private get themesFilePath(): string {

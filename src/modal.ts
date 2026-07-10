@@ -1,17 +1,14 @@
-import {
-  App,
-  Modal,
-  Setting,
-  MarkdownRenderer,
-  TFile,
-  Notice,
-  Component,
-  FileSystemAdapter,
-} from "obsidian";
+import { App, Modal, Setting, TFile, Notice } from "obsidian";
 import type { DocConfig, PdfTheme, PluginSettings } from "./types";
 import { BUILTIN_THEMES, duplicateTheme } from "./themes";
-import { buildHtml, resolveImagePaths, makeDocVars, makePdfMetadata, applyPageBreaks, coverInfoRows } from "./render";
-import { generatePdf } from "./pdf";
+import { buildHtml, makeDocVars, coverInfoRows } from "./render";
+import {
+  exportNoteToPdf,
+  extractTitle,
+  getVaultBasePath,
+  loadLogoDataUri,
+  renderNoteHtml,
+} from "./export";
 import {
   DOC_CONFIG_KEY,
   applyPartial,
@@ -258,12 +255,6 @@ export class ExportModal extends Modal {
     setting.openTabById(this.pluginId);
   }
 
-  private getVaultBasePath(): string {
-    const adapter = this.app.vault.adapter;
-    if (adapter instanceof FileSystemAdapter) return adapter.getBasePath();
-    return "";
-  }
-
   private getEffectiveTheme(): PdfTheme {
     return resolveTheme(this.selectedTheme, this.docConfig, this.state.edits);
   }
@@ -363,35 +354,16 @@ export class ExportModal extends Modal {
 
     const mdContent = await this.app.vault.cachedRead(this.file);
     this.cachedFrontmatter = this.app.metadataCache.getFileCache(this.file)?.frontmatter ?? {};
-
-    let title = this.file.basename;
-    for (const line of mdContent.split("\n")) {
-      if (line.startsWith("# ")) {
-        title = line.replace(/^#+\s*/, "").trim();
-        break;
-      }
-    }
-    this.cachedTitle = title;
-
-    const tempDiv = createDiv();
-    const component = new Component();
-    component.load();
-    await MarkdownRenderer.render(
-      this.app,
-      applyPageBreaks(mdContent),
-      tempDiv,
-      this.file.path,
-      component
-    );
-    this.cachedBodyHtml = resolveImagePaths(tempDiv.innerHTML, this.getVaultBasePath());
-    component.unload();
+    this.cachedTitle = extractTitle(mdContent, this.file.basename);
+    this.cachedBodyHtml = await renderNoteHtml(this.app, mdContent, this.file.path);
   }
 
+  /** Logos are re-read on every preview otherwise, once per keystroke. */
   private async getLogoDataUri(logoPath: string): Promise<string> {
     if (!logoPath) return "";
     const cached = this.cachedLogoDataUris.get(logoPath);
     if (cached !== undefined) return cached;
-    const uri = await this.loadLogoAsDataUri(logoPath);
+    const uri = await loadLogoDataUri(this.app, logoPath);
     this.cachedLogoDataUris.set(logoPath, uri);
     return uri;
   }
@@ -452,12 +424,10 @@ export class ExportModal extends Modal {
   private async doExport() {
     this.settings.lastUsedThemeId = this.selectedTheme.id;
 
-    await this.prepareContent();
-
     // Keep proposing the note's own folder; lastOutputDir only feeds the
     // dialog-less quick export command.
     const noteDir = this.file.parent?.path || "";
-    const defaultPath = path.join(this.getVaultBasePath(), noteDir, this.file.basename + ".pdf");
+    const defaultPath = path.join(getVaultBasePath(this.app), noteDir, this.file.basename + ".pdf");
 
     const result = await getElectronRemote().dialog.showSaveDialog({
       defaultPath,
@@ -469,35 +439,13 @@ export class ExportModal extends Modal {
     this.settings.lastOutputDir = path.dirname(result.filePath);
     await this.saveSettings();
 
-    const theme = this.getEffectiveTheme();
-    const logoDataUri = await this.getLogoDataUri(theme.logoPath);
-    const vars = makeDocVars(this.cachedTitle!, this.file.basename, this.cachedFrontmatter);
-    const coverInfo = coverInfoRows(this.cachedFrontmatter, this.getCoverInfoKeys());
-    const html = buildHtml(this.cachedBodyHtml!, this.cachedTitle!, theme, logoDataUri, vars, coverInfo);
-
-    const meta = theme.includeMetadata
-      ? makePdfMetadata(this.cachedTitle!, this.cachedFrontmatter)
-      : undefined;
-    await generatePdf(html, result.filePath, meta);
+    await exportNoteToPdf({
+      app: this.app,
+      file: this.file,
+      theme: this.getEffectiveTheme(),
+      coverInfoKeys: this.getCoverInfoKeys(),
+      outputPath: result.filePath,
+    });
     new Notice(`PDF exported → ${path.basename(result.filePath)}`);
-  }
-
-  private async loadLogoAsDataUri(logoPath: string): Promise<string> {
-    const file = this.app.vault.getAbstractFileByPath(logoPath);
-    if (!file || !(file instanceof TFile)) return "";
-
-    const data = await this.app.vault.readBinary(file);
-    const ext = logoPath.split(".").pop()?.toLowerCase() || "png";
-    const mimeMap: Record<string, string> = {
-      png: "image/png",
-      jpg: "image/jpeg",
-      jpeg: "image/jpeg",
-      svg: "image/svg+xml",
-      gif: "image/gif",
-      webp: "image/webp",
-    };
-    const mime = mimeMap[ext] || "image/png";
-    const b64 = Buffer.from(data).toString("base64");
-    return `data:${mime};base64,${b64}`;
   }
 }

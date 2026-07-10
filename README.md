@@ -2,14 +2,18 @@
 
 Export Markdown notes to beautifully styled PDFs with configurable themes: colors, logo, header/footer, watermark, PDF bookmarks, legal notice.
 
-## What's new in 1.2.0
+## What's new in 1.3.0
 
-- **External links**: show the URL inline `(https://…)` or as a real footnote
-- **Configurable pagination format** (`{page}` / `{pages}`)
-- **Automatic heading numbering** (1, 1.1, …), synced with the table of contents
-- **Clickable table of contents** in the exported PDF
+Configuration is now layered: **the theme carries the defaults, the note overrides them, the export modal has the last word.**
 
-See the full [changelog](CHANGELOG.md) for earlier releases (PDF metadata, classification banner, page breaks, cover info block…).
+- **"This document" section** in the export modal: subtitle, cover, table of contents, watermark and classification, changeable right before exporting
+- **"Save to note"**: writes those overrides into the note's frontmatter, so a one-off tweak becomes reproducible
+- **`theme:` frontmatter key**: pin a base theme per note
+- **`order:` frontmatter key**: sort chapters in a merged export, without `01-` filename prefixes
+- **Quick export command**: no dialog, straight to a PDF next to the note
+- **Duplicate** any theme, built-ins included
+
+⚠️ **Breaking**: `rhino-pdf` frontmatter must now be valid YAML — quote values containing `{`, `:` or `#`. See the [changelog](CHANGELOG.md).
 
 ## Features
 
@@ -23,8 +27,8 @@ See the full [changelog](CHANGELOG.md) for earlier releases (PDF metadata, class
 - **Table of contents**: auto-generated from H2/H3 headings, clickable, with page numbers and customizable title
 - **Heading numbering**: optional automatic numbering of H2/H3 (1, 1.1, …), synced with the table of contents
 - **External links**: optionally show link URLs inline or as page footnotes
-- **YAML frontmatter**: override theme settings per note via the `rhino-pdf` key
-- **Export overrides**: subtitle can be changed in the export modal without modifying the theme
+- **YAML frontmatter**: override theme settings per note via the `rhino-pdf` key, including which theme to use
+- **Export overrides**: change subtitle, cover, TOC, watermark and classification in the export modal, then save them to the note or to the theme
 - **Obsidian callouts**: full callout rendering with colors and icons (all standard types + [Callout Manager](https://github.com/eth-p/obsidian-callout-manager) compatibility)
 - **Watermark**: optional text watermark on every page (configurable text, color, opacity, font size, rotation)
 - **Dynamic headers/footers**: header, footer and classification text support `{title}`, `{filename}`, `{author}`, `{date}`, `{time}` and `{fm.key}` (any frontmatter field), resolved at export time
@@ -33,8 +37,10 @@ See the full [changelog](CHANGELOG.md) for earlier releases (PDF metadata, class
 - **Classification banner**: optional text (e.g. "RESTRICTED") centered on every page, including the cover
 - **Manual page breaks**: insert `<!-- pagebreak -->` in a note to force a new page
 - **Automatic page breaks**: optionally start a new page before every H1/H2/H3 (per theme)
-- **Cover info block**: pick frontmatter fields (author, date, …) to list in a table on the cover, via checkboxes in the export modal
-- **Edit theme shortcut**: "Edit theme" button in the export modal opens the theme editor directly
+- **Cover info block**: pick frontmatter fields (author, date, …) to list in a table on the cover, via checkboxes in the export modal; persisted per note (`coverInfo`) or per theme
+- **Merge ordering**: sort notes of a merged export with the `order` frontmatter key
+- **Quick export**: "Export note as PDF with last settings" skips the modal entirely
+- **Edit theme shortcut**: "Edit theme" button in the export modal opens the theme editor without losing your overrides
 - **Logo**: displayed on cover page + small version in the top-right corner of subsequent pages
 - **Pagination**: configurable footer format (`{page}` / `{pages}`, via paged.js CSS counters)
 - **Legal notice**: optional block at the end of the document
@@ -45,7 +51,7 @@ See the full [changelog](CHANGELOG.md) for earlier releases (PDF metadata, class
 
 ### From Obsidian
 
-Settings → Community plugins → Browse → search "Rhino PDF Export" → Install → Enable.
+Settings → Community plugins → Browse → search "Rhino PDF Export" → Install → Enable. Or get it there : https://community.obsidian.md/plugins/rhino-pdf-export
 
 ### Manual
 
@@ -62,21 +68,34 @@ cp main.js manifest.json styles.css /path/to/vault/.obsidian/plugins/rhino-pdf-e
 
 ## Usage
 
-- **Command palette**: `Export note as PDF`
+- **Command palette**: `Export note as PDF`, or `Export note as PDF with last settings` to skip the modal
 - **Right-click** on a `.md` file → `Export note as PDF`
 - **Right-click** on a folder → `Export folder as PDF`
 
-The export modal shows a live PDF preview and lets you pick the theme, override the subtitle, jump to the theme editor, and choose the output location.
+The export modal shows a live PDF preview, lets you pick the theme, and opens a **"This document"** section for the settings you want to change just this once.
 
 For folder export, a toggle lets you merge all notes into a single PDF with a global table of contents.
 
-## YAML Frontmatter
+## Where settings live
+
+Three layers, resolved in this order — **the export modal wins, then the note, then the theme**:
+
+| Layer | Holds | Edited in |
+|---|---|---|
+| **Theme** | The charter: colors, fonts, logo, margins, page size, legal notice | Settings → theme editor |
+| **Note** | What is specific to this document: subtitle, watermark, classification, cover info | The `rhino-pdf` frontmatter key |
+| **Export** | A one-off change, before hitting Export | The "This document" section |
+
+Two buttons bridge the layers. **Save to note** writes the modal's overrides into the note's frontmatter — that is how a one-off tweak becomes reproducible. **Save as theme default** promotes them to the theme instead, duplicating it first if it is built-in.
+
+## YAML frontmatter
 
 Add a `rhino-pdf` block in a note's frontmatter to override theme settings:
 
 ```yaml
 ---
 rhino-pdf:
+  theme: "Corporate Report"      # pin a theme, by name or id
   primaryColor: "#e63946"
   showCover: false
   subtitle: "My subtitle"
@@ -84,13 +103,25 @@ rhino-pdf:
   headerText: "{title} — {date}"
   classificationText: "RESTRICTED"
   pageBreakBeforeH2: true
+  coverInfo: [author, case_id]   # cover info block for this note
+  order: 2                       # position in a merged folder export
   margins:
     top: 30mm
     bottom: 30mm
 ---
 ```
 
-All `PdfTheme` fields are supported.
+Every theme field is supported except `id`, `name` and `builtin` — a note must not be able to rename the theme it resolves against.
+
+Values must be **valid YAML**. Quote anything containing `{`, `:` or `#`, or YAML will read it as structure:
+
+```yaml
+rhino-pdf:
+  paginationFormat: "{page} / {pages}"   # quoted — `{` would open a flow mapping
+  primaryColor: "#e63946"                # quoted — `#` would start a comment
+```
+
+Unknown or invalid keys are ignored rather than applied, and the export modal shows a badge listing them.
 
 ## Help & reference
 
@@ -117,7 +148,24 @@ Put this on its own line anywhere in a note to force a new page:
 
 ### Automatic page breaks
 
-In the theme editor (Page layout → "Page break before headings"), toggle **Before heading 1/2/3** to start a new page before every heading of that level. Cover and table-of-contents headings are never affected.
+In the theme editor (Page layout → "Page breaks"), toggle **Before heading 1/2/3** to start a new page before every heading of that level. Cover and table-of-contents headings are never affected.
+
+Set `pageBreakBeforeH2: true` in a note's frontmatter and it applies to that note only, including inside a merged folder export.
+
+### Merge order
+
+In a merged folder export, notes are sorted by their `rhino-pdf.order` frontmatter key, then alphabetically. Notes without one come last.
+
+```yaml
+---
+rhino-pdf:
+  order: 1
+---
+```
+
+### Quick export
+
+`Export note as PDF with last settings` exports without opening the modal. It uses the theme pinned by the note's `rhino-pdf.theme`, falling back to the last theme you used, and writes to the folder of your last export (or next to the note). **It overwrites an existing PDF of the same name without asking** — the destination is shown in the notice.
 
 ### Classification banner
 
@@ -136,7 +184,7 @@ Enable **PDF metadata** in the theme editor to fill the generated PDF's document
 
 ### Cover info block
 
-In the export modal, each frontmatter field of the note appears as a checkbox under **Cover info block**. Tick the ones you want and they are listed as a label/value table on the cover page (requires a theme with a cover). Example frontmatter:
+In the export modal, under **This document → Cover info block**, each frontmatter field of the note appears as a checkbox. Tick the ones you want and they are listed as a label/value table on the cover page (requires a theme with a cover). Example frontmatter:
 
 ```yaml
 ---
@@ -146,6 +194,8 @@ case_id: AFFAIRE-2026-0042
 tags: [osint, report]
 ---
 ```
+
+The selection is remembered where you save it: **Save to note** writes `coverInfo: [author, case_id]` into the note, and **Save as theme default** stores it as the theme's `coverInfoFields`, applied to every note exported with it.
 
 ### External links
 
@@ -202,15 +252,17 @@ npm run build   # production
 
 ```
 src/
-├── main.ts         # Entry point, commands and context menus
-├── types.ts        # PdfTheme, PluginSettings interfaces
-├── themes.ts       # Built-in themes + factory
-├── settings.ts     # Settings tab (theme editor, JSON import/export)
-├── modal.ts        # Export modal with live preview
-├── batch.ts        # Batch export (full folder)
-├── frontmatter.ts  # YAML frontmatter parsing → theme overrides
-├── render.ts       # HTML + CSS Paged Media generation
-├── pdf.ts          # Electron BrowserWindow + printToPDF
+├── main.ts           # Entry point, commands and context menus
+├── types.ts          # PdfTheme, DocConfig, PluginSettings interfaces
+├── themes.ts         # Built-in themes + factory + duplication
+├── settings.ts       # Settings tab (theme editor, JSON import/export)
+├── modal.ts          # Export modal with live preview
+├── batch.ts          # Batch export (full folder)
+├── doc-config-ui.ts  # "This document" overrides section, shared by both modals
+├── frontmatter.ts    # rhino-pdf validation + theme resolution
+├── export.ts         # Shared note → PDF pipeline
+├── render.ts         # HTML + CSS Paged Media generation
+├── pdf.ts            # Electron BrowserWindow + printToPDF
 └── vendor/
     └── paged.polyfill.txt  # paged.js v0.4.3 bundled
 ```

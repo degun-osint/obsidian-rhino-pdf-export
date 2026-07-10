@@ -2,27 +2,29 @@ import {
   App,
   Modal,
   Setting,
-  MarkdownRenderer,
   TFile,
   TFolder,
   Notice,
-  Component,
-  FileSystemAdapter,
 } from "obsidian";
 import type { DocConfig, PdfTheme, PluginSettings } from "./types";
 import { BUILTIN_THEMES } from "./themes";
 import {
   buildHtml,
   buildMergedHtml,
-  resolveImagePaths,
   makeDocVars,
   makePdfMetadata,
-  applyPageBreaks,
   coverInfoRows,
   type MergedSection,
 } from "./render";
 import { generatePdf } from "./pdf";
 import { readDocConfig, resolveBaseTheme, resolveCoverInfoKeys, resolveTheme } from "./frontmatter";
+import {
+  exportNoteToPdf,
+  extractTitle,
+  getVaultBasePath,
+  loadLogoDataUri,
+  renderNoteHtml,
+} from "./export";
 import { createDocConfigState, renderDocConfigSection, type DocConfigState, type DocField } from "./doc-config-ui";
 import * as fs from "fs";
 import * as path from "path";
@@ -197,12 +199,6 @@ export class BatchExportModal extends Modal {
     });
   }
 
-  private getVaultBasePath(): string {
-    const adapter = this.app.vault.adapter;
-    if (adapter instanceof FileSystemAdapter) return adapter.getBasePath();
-    return "";
-  }
-
   /** Theme used for the shared stylesheet and for notes without frontmatter. */
   private getEffectiveTheme(): PdfTheme {
     return resolveTheme(this.selectedTheme, EMPTY_DOC_CONFIG, this.state.edits);
@@ -253,8 +249,8 @@ export class BatchExportModal extends Modal {
     if (gen !== this.previewGen) return;
 
     const title = extractTitle(mdContent, firstFile.basename);
-    const bodyHtml = await this.renderMarkdown(mdContent, firstFile.path);
-    const logoDataUri = await this.loadLogoDataUri(theme.logoPath);
+    const bodyHtml = await renderNoteHtml(this.app, mdContent, firstFile.path);
+    const logoDataUri = await loadLogoDataUri(this.app, theme.logoPath);
     if (gen !== this.previewGen) return;
 
     const fm = this.app.metadataCache.getFileCache(firstFile)?.frontmatter ?? {};
@@ -292,16 +288,6 @@ export class BatchExportModal extends Modal {
     this.previewWebview = null;
   }
 
-  private async renderMarkdown(mdContent: string, sourcePath: string): Promise<string> {
-    const tempDiv = createDiv();
-    const component = new Component();
-    component.load();
-    await MarkdownRenderer.render(this.app, applyPageBreaks(mdContent), tempDiv, sourcePath, component);
-    const html = resolveImagePaths(tempDiv.innerHTML, this.getVaultBasePath());
-    component.unload();
-    return html;
-  }
-
   private async exportSeparate(
     mdFiles: TFile[],
     progressEl: HTMLElement,
@@ -309,7 +295,7 @@ export class BatchExportModal extends Modal {
     progressText: HTMLElement
   ) {
     const result = await getElectronRemote().dialog.showOpenDialog({
-      defaultPath: this.settings.lastOutputDir || this.getVaultBasePath(),
+      defaultPath: this.settings.lastOutputDir || getVaultBasePath(this.app),
       properties: ["openDirectory", "createDirectory"],
       title: "Choose output folder for PDFs",
     });
@@ -354,7 +340,7 @@ export class BatchExportModal extends Modal {
   ) {
     const folderName = this.folder.name || "vault";
     const defaultPath = path.join(
-      this.settings.lastOutputDir || this.getVaultBasePath(),
+      this.settings.lastOutputDir || getVaultBasePath(this.app),
       `${folderName}.pdf`
     );
     const result = await getElectronRemote().dialog.showSaveDialog({
@@ -370,7 +356,7 @@ export class BatchExportModal extends Modal {
     progressBar.max = mdFiles.length;
 
     const theme = this.getEffectiveTheme();
-    const logoDataUri = await this.loadLogoDataUri(theme.logoPath);
+    const logoDataUri = await loadLogoDataUri(this.app, theme.logoPath);
 
     const sections: MergedSection[] = [];
 
@@ -382,7 +368,7 @@ export class BatchExportModal extends Modal {
       try {
         const mdContent = await this.app.vault.cachedRead(file);
         const title = extractTitle(mdContent, file.basename);
-        const bodyHtml = await this.renderMarkdown(mdContent, file.path);
+        const bodyHtml = await renderNoteHtml(this.app, mdContent, file.path);
 
         // A merged PDF has one stylesheet, so only the per-note page breaks can
         // vary; colors, fonts and margins come from the batch theme.
@@ -443,43 +429,14 @@ export class BatchExportModal extends Modal {
     });
   }
 
-  private async loadLogoDataUri(logoPath: string): Promise<string> {
-    if (!logoPath) return "";
-    const logoFile = this.app.vault.getAbstractFileByPath(logoPath);
-    if (!logoFile || !(logoFile instanceof TFile)) return "";
-    const data = await this.app.vault.readBinary(logoFile);
-    const ext = logoPath.split(".").pop()?.toLowerCase() || "png";
-    const mimeMap: Record<string, string> = {
-      png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg",
-      svg: "image/svg+xml", gif: "image/gif", webp: "image/webp",
-    };
-    const b64 = Buffer.from(data).toString("base64");
-    return `data:${mimeMap[ext] || "image/png"};base64,${b64}`;
-  }
-
   private async exportFile(file: TFile, outputDir: string) {
-    const mdContent = await this.app.vault.cachedRead(file);
     const { theme, docConfig } = this.resolveForFile(file);
-
-    const title = extractTitle(mdContent, file.basename);
-    const bodyHtml = await this.renderMarkdown(mdContent, file.path);
-    const logoDataUri = await this.loadLogoDataUri(theme.logoPath);
-
-    const fm = this.app.metadataCache.getFileCache(file)?.frontmatter ?? {};
-    const vars = makeDocVars(title, file.basename, fm);
-    const coverInfo = coverInfoRows(fm, resolveCoverInfoKeys(theme, docConfig));
-    const html = buildHtml(bodyHtml, title, theme, logoDataUri, vars, coverInfo);
-    const fullPath = path.join(outputDir, file.basename + ".pdf");
-
-    const meta = theme.includeMetadata ? makePdfMetadata(title, fm) : undefined;
-    await generatePdf(html, fullPath, meta);
+    await exportNoteToPdf({
+      app: this.app,
+      file,
+      theme,
+      coverInfoKeys: resolveCoverInfoKeys(theme, docConfig),
+      outputPath: path.join(outputDir, file.basename + ".pdf"),
+    });
   }
-}
-
-/** The first `# H1` of a note, falling back to its filename. */
-function extractTitle(mdContent: string, fallback: string): string {
-  for (const line of mdContent.split("\n")) {
-    if (line.startsWith("# ")) return line.replace(/^#+\s*/, "").trim();
-  }
-  return fallback;
 }

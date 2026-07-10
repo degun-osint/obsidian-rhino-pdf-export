@@ -4,6 +4,57 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-07-10
+
+Configuration is now layered: the theme carries the defaults, the note overrides
+them, the export modal has the last word.
+
+### Added
+- **"This document" section** in both export modals: change the subtitle, cover,
+  table of contents, watermark and classification banner right before exporting,
+  without touching the theme.
+- **"Save to note"**: writes the modal's overrides into the note's `rhino-pdf`
+  frontmatter, so any last-minute tweak becomes reproducible. It merges onto the
+  existing block, preserving keys the modal does not expose.
+- **"Save as theme default"**: promotes the modal's overrides to the theme,
+  duplicating it first when it is built-in.
+- **`theme:` frontmatter key**: pin a base theme per note, by id or by name.
+- **`order:` frontmatter key**: sort notes in a merged batch export. Chapters no
+  longer need `01-` filename prefixes.
+- **`coverInfo:` frontmatter key**: the cover info block selection is finally
+  persisted. The checkboxes used to reset on every open.
+- **Cover info block in the theme** (`coverInfoFields`) as the default selection,
+  and in batch export, where it was missing entirely.
+- **Override badge** in the export modal, reporting how many settings the note's
+  frontmatter changes, plus a second badge listing keys rejected by validation.
+- **"Export note as PDF with last settings"** command: no dialog, uses the pinned
+  theme and writes next to the note (or to the last folder used). Overwrites an
+  existing PDF of the same name.
+- **Duplicate** button on every theme, built-ins included.
+
+### Changed
+- **BREAKING — `rhino-pdf` frontmatter must be valid YAML.** The hand-rolled
+  parser was replaced by Obsidian's own. It was lenient and accepted values that
+  YAML rejects, typically `paginationFormat: {page}/{pages}`, where `{` opens a
+  flow mapping. Quote such values: `paginationFormat: "{page}/{pages}"`.
+  Unknown or invalid keys are now ignored and reported instead of applied.
+- Overrides resolve consistently everywhere: modal > frontmatter > theme. Batch
+  export used to let the frontmatter win over the dialog.
+- Merged batch exports honour each note's page-break settings.
+- Theme editor sections follow the order things appear in the document, margins
+  are four inputs, and watermark opacity/rotation are sliders. All three used to
+  discard invalid input without a word.
+- The export modal's preview is debounced; every keystroke used to rerun paged.js.
+- "Edit theme" no longer closes the modal and discards your overrides.
+
+### Fixed
+- An empty value in the modal now clears a value set by the theme. Truthiness
+  checks made it impossible to remove a theme's subtitle.
+- A watermark containing `</script>` no longer breaks the whole render.
+- `lastOutputDir` and any future plugin setting are actually persisted;
+  `saveSettings()` only ever wrote `lastUsedThemeId`.
+- Duplicating a theme deep-copies its margins instead of sharing them.
+
 ## [1.2.0] - 2026-06-14
 
 ### Added
