@@ -71,6 +71,11 @@ const COLOR_RE =
 const LENGTH_RE = /^(0|-?\d*\.?\d+(mm|cm|in|pt|pc|px|em|rem|ex|ch|vw|vh|%))$/i;
 const FONT_UNSAFE_RE = /[{};@]|url\(/i;
 
+/** A CSS length the generated stylesheet can safely interpolate. */
+export function isCssLength(value: string): boolean {
+  return LENGTH_RE.test(value.trim());
+}
+
 function coerceText(v: unknown): string | null {
   if (typeof v === "string") return v;
   if (typeof v === "number" || typeof v === "boolean") return String(v);

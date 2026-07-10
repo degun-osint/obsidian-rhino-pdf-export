@@ -86,8 +86,14 @@
   width: 100%;
 }
 
-.rhino-margin-input input[type="text"] {
-  width: 250px;
+.rhino-margins-row input[type="text"] {
+  width: 72px;
+  margin-left: 4px;
+}
+
+/* A value the generated stylesheet could not use */
+.rhino-invalid {
+  border-color: var(--text-error) !important;
 }
 
 /* Export modal: per-document overrides */

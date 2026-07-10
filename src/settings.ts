@@ -1,7 +1,14 @@
-import { App, PluginSettingTab, Setting, Notice } from "obsidian";
+import { App, PluginSettingTab, Setting, Notice, TextComponent } from "obsidian";
 import type RhinoPdfExport from "./main";
 import type { PdfTheme } from "./types";
-import { BUILTIN_THEMES, createBlankTheme } from "./themes";
+import { BUILTIN_THEMES, createBlankTheme, duplicateTheme } from "./themes";
+import { isCssLength } from "./frontmatter";
+
+const PAGE_SIZES = ["A3", "A4", "A5", "Letter", "Legal", "Tabloid"];
+const MARGIN_SIDES = ["top", "right", "bottom", "left"] as const;
+
+type Getter<T> = () => T;
+type Setter<T> = (value: T) => void;
 
 export class ThemedPdfSettingTab extends PluginSettingTab {
   plugin: RhinoPdfExport;
@@ -11,24 +18,172 @@ export class ThemedPdfSettingTab extends PluginSettingTab {
     this.plugin = plugin;
   }
 
+  // --- Setting builders -----------------------------------------------------
+  // The editor holds ~30 fields; without these each one is an eight-line block.
+
+  private save(): void {
+    void this.plugin.saveSettings();
+  }
+
+  private addText(
+    c: HTMLElement,
+    name: string,
+    get: Getter<string>,
+    set: Setter<string>,
+    opts: { desc?: string; placeholder?: string; cls?: string } = {}
+  ): Setting {
+    const setting = new Setting(c).setName(name);
+    if (opts.desc) setting.setDesc(opts.desc);
+    if (opts.cls) setting.setClass(opts.cls);
+    setting.addText((t) => {
+      if (opts.placeholder) t.setPlaceholder(opts.placeholder);
+      t.setValue(get()).onChange((v) => {
+        set(v);
+        this.save();
+      });
+    });
+    return setting;
+  }
+
+  /** A CSS length input that flags an unusable value instead of dropping it. */
+  private addLength(
+    c: HTMLElement,
+    name: string,
+    get: Getter<string>,
+    set: Setter<string>,
+    opts: { desc?: string } = {}
+  ): Setting {
+    const setting = new Setting(c).setName(name);
+    if (opts.desc) setting.setDesc(opts.desc);
+    setting.addText((t) => {
+      t.setPlaceholder("12mm");
+      t.setValue(get()).onChange((v) => {
+        const valid = isCssLength(v);
+        t.inputEl.toggleClass("rhino-invalid", !valid);
+        if (!valid) return;
+        set(v.trim());
+        this.save();
+      });
+    });
+    return setting;
+  }
+
+  private addTextArea(
+    c: HTMLElement,
+    name: string,
+    get: Getter<string>,
+    set: Setter<string>,
+    opts: { desc?: string; rows?: number } = {}
+  ): Setting {
+    const setting = new Setting(c).setName(name).setClass("rhino-textarea-wide");
+    if (opts.desc) setting.setDesc(opts.desc);
+    setting.addTextArea((t) => {
+      t.setValue(get()).onChange((v) => {
+        set(v);
+        this.save();
+      });
+      t.inputEl.rows = opts.rows ?? 6;
+    });
+    return setting;
+  }
+
+  private addColor(
+    c: HTMLElement,
+    name: string,
+    get: Getter<string>,
+    set: Setter<string>,
+    opts: { desc?: string } = {}
+  ): Setting {
+    const setting = new Setting(c).setName(name);
+    if (opts.desc) setting.setDesc(opts.desc);
+    setting.addText((t: TextComponent) => {
+      t.inputEl.type = "color";
+      t.setValue(get()).onChange((v) => {
+        set(v);
+        this.save();
+      });
+    });
+    return setting;
+  }
+
+  private addToggle(
+    c: HTMLElement,
+    name: string,
+    get: Getter<boolean>,
+    set: Setter<boolean>,
+    opts: { desc?: string } = {}
+  ): Setting {
+    const setting = new Setting(c).setName(name);
+    if (opts.desc) setting.setDesc(opts.desc);
+    setting.addToggle((t) => {
+      t.setValue(get()).onChange((v) => {
+        set(v);
+        this.save();
+      });
+    });
+    return setting;
+  }
+
+  private addSlider(
+    c: HTMLElement,
+    name: string,
+    get: Getter<number>,
+    set: Setter<number>,
+    limits: { min: number; max: number; step: number },
+    opts: { desc?: string } = {}
+  ): Setting {
+    const setting = new Setting(c).setName(name);
+    if (opts.desc) setting.setDesc(opts.desc);
+    setting.addSlider((s) => {
+      s.setLimits(limits.min, limits.max, limits.step)
+        .setValue(get())
+        .setDynamicTooltip()
+        .onChange((v) => {
+          set(v);
+          this.save();
+        });
+    });
+    return setting;
+  }
+
+  private addDropdown(
+    c: HTMLElement,
+    name: string,
+    choices: [string, string][],
+    get: Getter<string>,
+    set: Setter<string>,
+    opts: { desc?: string } = {}
+  ): Setting {
+    const setting = new Setting(c).setName(name);
+    if (opts.desc) setting.setDesc(opts.desc);
+    setting.addDropdown((dd) => {
+      for (const [value, label] of choices) dd.addOption(value, label);
+      dd.setValue(get()).onChange((v) => {
+        set(v);
+        this.save();
+      });
+    });
+    return setting;
+  }
+
+  // --- Theme list -----------------------------------------------------------
+
   display() {
     const { containerEl } = this;
     containerEl.empty();
 
     new Setting(containerEl).setName("PDF export").setHeading();
 
-    // --- Built-in themes ---
     new Setting(containerEl).setName("Built-in themes").setHeading();
     for (const theme of BUILTIN_THEMES) {
       this.renderThemeRow(containerEl, theme, true);
     }
 
-    // --- Custom themes ---
     new Setting(containerEl).setName("Custom themes").setHeading();
 
     if (this.plugin.settings.themes.length === 0) {
       containerEl.createEl("p", {
-        text: "No custom themes yet.",
+        text: "No custom themes yet. Duplicate a built-in theme to start from it.",
         cls: "setting-item-description",
       });
     }
@@ -53,11 +208,7 @@ export class ThemedPdfSettingTab extends PluginSettingTab {
       });
   }
 
-  private renderThemeRow(
-    containerEl: HTMLElement,
-    theme: PdfTheme,
-    isBuiltin: boolean
-  ) {
+  private renderThemeRow(containerEl: HTMLElement, theme: PdfTheme, isBuiltin: boolean) {
     const row = new Setting(containerEl)
       .setName(theme.name)
       .setDesc(
@@ -79,6 +230,17 @@ export class ThemedPdfSettingTab extends PluginSettingTab {
       });
     });
 
+    // Available on built-ins too: starting from one used to mean retyping it.
+    row.addButton((btn) => {
+      btn.setIcon("copy").setTooltip("Duplicate").onClick(async () => {
+        const copy = duplicateTheme(theme);
+        this.plugin.settings.themes.push(copy);
+        await this.plugin.saveSettings();
+        new Notice(`Theme duplicated as "${copy.name}".`);
+        this.display();
+      });
+    });
+
     if (!isBuiltin) {
       row.addButton((btn) => {
         btn.setButtonText("Edit").onClick(() => {
@@ -97,415 +259,189 @@ export class ThemedPdfSettingTab extends PluginSettingTab {
     }
   }
 
+  // --- Theme editor ---------------------------------------------------------
+  // Sections follow the order things appear in the document.
+
   private openThemeEditor(theme: PdfTheme) {
     const { containerEl } = this;
     containerEl.empty();
 
     new Setting(containerEl).setName(`Edit: ${theme.name}`).setHeading();
-
     new Setting(containerEl).addButton((btn) => {
       btn.setButtonText("Back").onClick(() => this.display());
     });
 
-    new Setting(containerEl)
-      .setName("Theme name")
-      .addText((t) => {
-        t.setValue(theme.name).onChange(async (v) => {
-          theme.name = v;
-          await this.plugin.saveSettings();
-        });
-      });
+    this.addText(containerEl, "Theme name", () => theme.name, (v) => { theme.name = v; });
+    this.addColor(containerEl, "Primary color", () => theme.primaryColor, (v) => { theme.primaryColor = v; });
+    this.addColor(containerEl, "Accent color", () => theme.accentColor, (v) => { theme.accentColor = v; });
+    this.addText(containerEl, "Logo", () => theme.logoPath, (v) => { theme.logoPath = v.trim(); }, {
+      desc: "Relative path in vault (e.g. assets/logo.png)",
+      placeholder: "assets/logo.png",
+    });
 
-    // Colors
-    new Setting(containerEl)
-      .setName("Primary color")
-      .addText((t) => {
-        t.inputEl.type = "color";
-        t.setValue(theme.primaryColor).onChange(async (v) => {
-          theme.primaryColor = v;
-          await this.plugin.saveSettings();
-        });
-      });
-
-    new Setting(containerEl)
-      .setName("Accent color")
-      .addText((t) => {
-        t.inputEl.type = "color";
-        t.setValue(theme.accentColor).onChange(async (v) => {
-          theme.accentColor = v;
-          await this.plugin.saveSettings();
-        });
-      });
-
-    // Logo
-    new Setting(containerEl)
-      .setName("Logo")
-      .setDesc("Relative path in vault (e.g. assets/logo.png)")
-      .addText((t) => {
-        t.setPlaceholder("assets/logo.png")
-          .setValue(theme.logoPath)
-          .onChange(async (v) => {
-            theme.logoPath = v.trim();
-            await this.plugin.saveSettings();
-          });
-      });
-
-    // Cover page
-    new Setting(containerEl)
-      .setName("Cover page")
-      .addToggle((t) => {
-        t.setValue(theme.showCover).onChange(async (v) => {
-          theme.showCover = v;
-          await this.plugin.saveSettings();
-        });
-      });
-
-    new Setting(containerEl)
-      .setName("Table of contents")
-      .setDesc("Auto-generated from h2/h3 headings, after the cover page")
-      .addToggle((t) => {
-        t.setValue(theme.showToc).onChange(async (v) => {
-          theme.showToc = v;
-          await this.plugin.saveSettings();
-        });
-      });
-
-    new Setting(containerEl)
-      .setName("Table of contents title")
-      .setDesc("Heading displayed above the table of contents")
-      .addText((t) => {
-        t.setValue(theme.tocTitle).onChange(async (v) => {
-          theme.tocTitle = v;
-          await this.plugin.saveSettings();
-        });
-      });
-
-    new Setting(containerEl)
-      .setName("Number headings")
-      .setDesc("Automatically number H2/H3 headings (1, 1.1, …), synced with the table of contents")
-      .addToggle((t) => {
-        t.setValue(theme.numberHeadings).onChange(async (v) => {
-          theme.numberHeadings = v;
-          await this.plugin.saveSettings();
-        });
-      });
-
-    new Setting(containerEl)
-      .setName("Subtitle")
-      .addText((t) => {
-        t.setValue(theme.subtitle).onChange(async (v) => {
-          theme.subtitle = v;
-          await this.plugin.saveSettings();
-        });
-      });
-
-    // Header
-    new Setting(containerEl)
-      .setName("Header logo (page 2+)")
-      .addToggle((t) => {
-        t.setValue(theme.showHeaderLogo).onChange(async (v) => {
-          theme.showHeaderLogo = v;
-          await this.plugin.saveSettings();
-        });
-      });
-
-    new Setting(containerEl)
-      .setName("Header logo height")
-      .addText((t) => {
-        t.setValue(theme.headerLogoHeight).onChange(async (v) => {
-          theme.headerLogoHeight = v;
-          await this.plugin.saveSettings();
-        });
-      });
-
-    new Setting(containerEl)
-      .setName("Header text")
-      .setDesc("Variables: {title}, {filename}, {author}, {date}, {time}, {fm.key}")
-      .addText((t) => {
-        t.setPlaceholder("{title}")
-          .setValue(theme.headerText)
-          .onChange(async (v) => {
-            theme.headerText = v;
-            await this.plugin.saveSettings();
-          });
-      });
-
-    // Footer
-    new Setting(containerEl)
-      .setName("Pagination")
-      .addToggle((t) => {
-        t.setValue(theme.showPagination).onChange(async (v) => {
-          theme.showPagination = v;
-          await this.plugin.saveSettings();
-        });
-      });
-
-    new Setting(containerEl)
-      .setName("Pagination format")
-      .setDesc("Use {page} and {pages}, e.g. \"{page} / {pages}\" or \"Page {page} of {pages}\"")
-      .addText((t) => {
-        t.setValue(theme.paginationFormat).onChange(async (v) => {
-          theme.paginationFormat = v;
-          await this.plugin.saveSettings();
-        });
-      });
-
-    new Setting(containerEl)
-      .setName("Footer text")
-      .setDesc("Variables: {title}, {filename}, {author}, {date}, {time}, {fm.key}")
-      .addText((t) => {
-        t.setValue(theme.footerText).onChange(async (v) => {
-          theme.footerText = v;
-          await this.plugin.saveSettings();
-        });
-      });
-
-    new Setting(containerEl)
-      .setName("External links")
-      .setDesc("How to display the address of external links in the PDF")
-      .addDropdown((dd) => {
-        dd.addOption("off", "Keep as links");
-        dd.addOption("inline", "Show inline");
-        dd.addOption("footnote", "As footnote");
-        dd.setValue(theme.urlDisplay).onChange(async (v) => {
-          theme.urlDisplay = v as PdfTheme["urlDisplay"];
-          await this.plugin.saveSettings();
-        });
-      });
-
-    // Legal notice
-    new Setting(containerEl)
-      .setName("Legal notice")
-      .addToggle((t) => {
-        t.setValue(theme.showLegal).onChange(async (v) => {
-          theme.showLegal = v;
-          await this.plugin.saveSettings();
-        });
-      });
-
-    new Setting(containerEl)
-      .setName("Legal notice title")
-      .addText((t) => {
-        t.setValue(theme.legalTitle).onChange(async (v) => {
-          theme.legalTitle = v;
-          await this.plugin.saveSettings();
-        });
-      });
-
-    new Setting(containerEl)
-      .setName("Legal notice text")
-      .setClass("rhino-textarea-wide")
-      .addTextArea((t) => {
-        t.setValue(theme.legalText).onChange(async (v) => {
-          theme.legalText = v;
-          await this.plugin.saveSettings();
-        });
-        t.inputEl.rows = 6;
-      });
-
-    new Setting(containerEl)
-      .setName("PDF metadata")
-      .setDesc("Write title/author/subject/keywords into the PDF properties (from frontmatter)")
-      .addToggle((t) => {
-        t.setValue(theme.includeMetadata).onChange(async (v) => {
-          theme.includeMetadata = v;
-          await this.plugin.saveSettings();
-        });
-      });
-
-    // Classification banner
-    new Setting(containerEl).setName("Classification banner").setHeading();
-
-    new Setting(containerEl)
-      .setName("Classification text")
-      .setDesc("Centered on every page (incl. cover). Leave empty to disable. Variables: {title}, {filename}, {author}, {date}, {time}, {fm.key}.")
-      .addText((t) => {
-        t.setPlaceholder("RESTRICTED")
-          .setValue(theme.classificationText)
-          .onChange(async (v) => {
-            theme.classificationText = v;
-            await this.plugin.saveSettings();
-          });
-      });
-
-    new Setting(containerEl)
-      .setName("Classification color")
-      .addText((t) => {
-        t.inputEl.type = "color";
-        t.setValue(theme.classificationColor).onChange(async (v) => {
-          theme.classificationColor = v;
-          await this.plugin.saveSettings();
-        });
-      });
-
-    // Watermark
-    new Setting(containerEl).setName("Watermark").setHeading();
-
-    new Setting(containerEl)
-      .setName("Watermark text")
-      .setDesc("Leave empty to disable")
-      .addText((t) => {
-        t.setPlaceholder("DRAFT")
-          .setValue(theme.watermarkText)
-          .onChange(async (v) => {
-            theme.watermarkText = v;
-            await this.plugin.saveSettings();
-          });
-      });
-
-    new Setting(containerEl)
-      .setName("Watermark color")
-      .addText((t) => {
-        t.inputEl.type = "color";
-        t.setValue(theme.watermarkColor).onChange(async (v) => {
-          theme.watermarkColor = v;
-          await this.plugin.saveSettings();
-        });
-      });
-
-    new Setting(containerEl)
-      .setName("Watermark opacity")
-      .setDesc("0 = invisible, 1 = fully opaque")
-      .addText((t) => {
-        t.setValue(String(theme.watermarkOpacity)).onChange(async (v) => {
-          const n = parseFloat(v);
-          if (!isNaN(n) && n >= 0 && n <= 1) {
-            theme.watermarkOpacity = n;
-            await this.plugin.saveSettings();
-          }
-        });
-      });
-
-    new Setting(containerEl)
-      .setName("Watermark font size")
-      .addText((t) => {
-        t.setValue(theme.watermarkFontSize).onChange(async (v) => {
-          theme.watermarkFontSize = v;
-          await this.plugin.saveSettings();
-        });
-      });
-
-    new Setting(containerEl)
-      .setName("Watermark rotation")
-      .setDesc("In degrees, e.g. -45")
-      .addText((t) => {
-        t.setValue(String(theme.watermarkRotation)).onChange(async (v) => {
-          const n = parseFloat(v);
-          if (!isNaN(n)) {
-            theme.watermarkRotation = n;
-            await this.plugin.saveSettings();
-          }
-        });
-      });
-
-    // Typography
-    new Setting(containerEl).setName("Typography").setHeading();
-
-    new Setting(containerEl)
-      .setName("Body font")
-      .addText((t) => {
-        t.setValue(theme.bodyFont).onChange(async (v) => {
-          theme.bodyFont = v;
-          await this.plugin.saveSettings();
-        });
-      });
-
-    new Setting(containerEl)
-      .setName("Code font")
-      .addText((t) => {
-        t.setValue(theme.codeFont).onChange(async (v) => {
-          theme.codeFont = v;
-          await this.plugin.saveSettings();
-        });
-      });
-
-    new Setting(containerEl)
-      .setName("Font size")
-      .addText((t) => {
-        t.setValue(theme.bodyFontSize).onChange(async (v) => {
-          theme.bodyFontSize = v;
-          await this.plugin.saveSettings();
-        });
-      });
-
-    // Page layout
-    new Setting(containerEl).setName("Page layout").setHeading();
-
-    new Setting(containerEl)
-      .setName("Page size")
-      .addDropdown((dd) => {
-        dd.addOption("A4", "A4");
-        dd.addOption("Letter", "Letter");
-        dd.addOption("Legal", "Legal");
-        dd.setValue(theme.pageSize).onChange(async (v) => {
-          theme.pageSize = v;
-          await this.plugin.saveSettings();
-        });
-      });
-
-    new Setting(containerEl)
-      .setName("Orientation")
-      .addDropdown((dd) => {
-        dd.addOption("portrait", "Portrait");
-        dd.addOption("landscape", "Landscape");
-        dd.setValue(theme.orientation || "portrait").onChange(async (v) => {
-          theme.orientation = v as "portrait" | "landscape";
-          await this.plugin.saveSettings();
-        });
-      });
-
-    new Setting(containerEl)
-      .setName("Margins (top, right, bottom, left)")
-      .setDesc("CSS values, e.g. 25mm")
-      .setClass("rhino-margin-input")
-      .addText((t) => {
-        t.setValue(
-          `${theme.margins.top}, ${theme.margins.right}, ${theme.margins.bottom}, ${theme.margins.left}`
-        ).onChange(async (v) => {
-          const parts = v.split(",").map((s) => s.trim());
-          if (parts.length === 4) {
-            theme.margins = {
-              top: parts[0],
-              right: parts[1],
-              bottom: parts[2],
-              left: parts[3],
-            };
-            await this.plugin.saveSettings();
-          }
-        });
-      });
-
-    new Setting(containerEl)
-      .setName("Page break before headings")
-      .setDesc("Start a new page before each heading of the selected level(s)");
-
-    new Setting(containerEl)
-      .setName("Before heading 1")
-      .addToggle((t) => {
-        t.setValue(theme.pageBreakBeforeH1).onChange(async (v) => {
-          theme.pageBreakBeforeH1 = v;
-          await this.plugin.saveSettings();
-        });
-      });
-
-    new Setting(containerEl)
-      .setName("Before heading 2")
-      .addToggle((t) => {
-        t.setValue(theme.pageBreakBeforeH2).onChange(async (v) => {
-          theme.pageBreakBeforeH2 = v;
-          await this.plugin.saveSettings();
-        });
-      });
-
-    new Setting(containerEl)
-      .setName("Before heading 3")
-      .addToggle((t) => {
-        t.setValue(theme.pageBreakBeforeH3).onChange(async (v) => {
-          theme.pageBreakBeforeH3 = v;
-          await this.plugin.saveSettings();
-        });
-      });
+    this.renderPageSection(containerEl, theme);
+    this.renderTypographySection(containerEl, theme);
+    this.renderCoverSection(containerEl, theme);
+    this.renderHeaderFooterSection(containerEl, theme);
+    this.renderWatermarkSection(containerEl, theme);
+    this.renderClassificationSection(containerEl, theme);
+    this.renderLegalSection(containerEl, theme);
+    this.renderMetadataSection(containerEl, theme);
   }
+
+  private renderPageSection(c: HTMLElement, theme: PdfTheme) {
+    new Setting(c).setName("Page layout").setHeading();
+
+    this.addDropdown(c, "Page size", PAGE_SIZES.map((s) => [s, s]), () => theme.pageSize, (v) => { theme.pageSize = v; });
+    this.addDropdown(
+      c,
+      "Orientation",
+      [["portrait", "Portrait"], ["landscape", "Landscape"]],
+      () => theme.orientation || "portrait",
+      (v) => { theme.orientation = v as PdfTheme["orientation"]; }
+    );
+
+    // One input per side: a single comma-separated field silently discarded
+    // anything that did not split into exactly four parts.
+    const margins = new Setting(c)
+      .setName("Margins")
+      .setDesc("Top, right, bottom, left. CSS lengths, e.g. 25mm")
+      .setClass("rhino-margins-row");
+    for (const side of MARGIN_SIDES) {
+      margins.addText((t) => {
+        t.setPlaceholder(side);
+        t.setValue(theme.margins[side]).onChange((v) => {
+          const valid = isCssLength(v);
+          t.inputEl.toggleClass("rhino-invalid", !valid);
+          if (!valid) return;
+          theme.margins[side] = v.trim();
+          this.save();
+        });
+      });
+    }
+
+    new Setting(c).setName("Page breaks").setHeading();
+    c.createEl("p", {
+      text: "Start a new page before each heading of the selected level(s). The cover and table of contents are never affected.",
+      cls: "setting-item-description",
+    });
+    this.addToggle(c, "Before heading 1", () => theme.pageBreakBeforeH1, (v) => { theme.pageBreakBeforeH1 = v; });
+    this.addToggle(c, "Before heading 2", () => theme.pageBreakBeforeH2, (v) => { theme.pageBreakBeforeH2 = v; });
+    this.addToggle(c, "Before heading 3", () => theme.pageBreakBeforeH3, (v) => { theme.pageBreakBeforeH3 = v; });
+  }
+
+  private renderTypographySection(c: HTMLElement, theme: PdfTheme) {
+    new Setting(c).setName("Typography").setHeading();
+    this.addText(c, "Body font", () => theme.bodyFont, (v) => { theme.bodyFont = v; });
+    this.addText(c, "Code font", () => theme.codeFont, (v) => { theme.codeFont = v; });
+    this.addLength(c, "Font size", () => theme.bodyFontSize, (v) => { theme.bodyFontSize = v; });
+  }
+
+  private renderCoverSection(c: HTMLElement, theme: PdfTheme) {
+    new Setting(c).setName("Cover and contents").setHeading();
+
+    this.addToggle(c, "Cover page", () => theme.showCover, (v) => { theme.showCover = v; });
+    this.addText(c, "Subtitle", () => theme.subtitle, (v) => { theme.subtitle = v; });
+    this.addText(
+      c,
+      "Cover info block",
+      () => theme.coverInfoFields.join(", "),
+      (v) => {
+        theme.coverInfoFields = v.split(",").map((s) => s.trim()).filter(Boolean);
+      },
+      {
+        desc: "Frontmatter keys listed on the cover by default, comma-separated (e.g. author, date)",
+        placeholder: "author, date",
+      }
+    );
+    this.addToggle(c, "Table of contents", () => theme.showToc, (v) => { theme.showToc = v; }, {
+      desc: "Auto-generated from h2/h3 headings, after the cover page",
+    });
+    this.addText(c, "Table of contents title", () => theme.tocTitle, (v) => { theme.tocTitle = v; });
+    this.addToggle(c, "Number headings", () => theme.numberHeadings, (v) => { theme.numberHeadings = v; }, {
+      desc: "Automatically number H2/H3 headings (1, 1.1, …), synced with the table of contents",
+    });
+  }
+
+  private renderHeaderFooterSection(c: HTMLElement, theme: PdfTheme) {
+    new Setting(c).setName("Header and footer").setHeading();
+
+    const vars = "Variables: {title}, {filename}, {author}, {date}, {time}, {fm.key}";
+
+    this.addToggle(c, "Header logo (page 2+)", () => theme.showHeaderLogo, (v) => { theme.showHeaderLogo = v; });
+    this.addLength(c, "Header logo height", () => theme.headerLogoHeight, (v) => { theme.headerLogoHeight = v; });
+    this.addText(c, "Header text", () => theme.headerText, (v) => { theme.headerText = v; }, {
+      desc: vars,
+      placeholder: "{title}",
+    });
+    this.addToggle(c, "Pagination", () => theme.showPagination, (v) => { theme.showPagination = v; });
+    this.addText(c, "Pagination format", () => theme.paginationFormat, (v) => { theme.paginationFormat = v; }, {
+      desc: 'Use {page} and {pages}, e.g. "{page} / {pages}" or "Page {page} of {pages}"',
+    });
+    this.addText(c, "Footer text", () => theme.footerText, (v) => { theme.footerText = v; }, { desc: vars });
+    this.addDropdown(
+      c,
+      "External links",
+      [["off", "Keep as links"], ["inline", "Show inline"], ["footnote", "As footnote"]],
+      () => theme.urlDisplay,
+      (v) => { theme.urlDisplay = v as PdfTheme["urlDisplay"]; },
+      { desc: "How to display the address of external links in the PDF" }
+    );
+  }
+
+  private renderWatermarkSection(c: HTMLElement, theme: PdfTheme) {
+    new Setting(c).setName("Watermark").setHeading();
+
+    this.addText(c, "Watermark text", () => theme.watermarkText, (v) => { theme.watermarkText = v; }, {
+      desc: "Leave empty to disable",
+      placeholder: "DRAFT",
+    });
+    this.addColor(c, "Watermark color", () => theme.watermarkColor, (v) => { theme.watermarkColor = v; });
+    this.addSlider(
+      c,
+      "Watermark opacity",
+      () => theme.watermarkOpacity,
+      (v) => { theme.watermarkOpacity = v; },
+      { min: 0, max: 1, step: 0.01 }
+    );
+    this.addLength(c, "Watermark font size", () => theme.watermarkFontSize, (v) => { theme.watermarkFontSize = v; });
+    this.addSlider(
+      c,
+      "Watermark rotation",
+      () => theme.watermarkRotation,
+      (v) => { theme.watermarkRotation = v; },
+      { min: -90, max: 90, step: 1 },
+      { desc: "In degrees" }
+    );
+  }
+
+  private renderClassificationSection(c: HTMLElement, theme: PdfTheme) {
+    new Setting(c).setName("Classification banner").setHeading();
+
+    this.addText(c, "Classification text", () => theme.classificationText, (v) => { theme.classificationText = v; }, {
+      desc: "Centered on every page (incl. cover). Leave empty to disable. Variables: {title}, {filename}, {author}, {date}, {time}, {fm.key}.",
+      placeholder: "RESTRICTED",
+    });
+    this.addColor(c, "Classification color", () => theme.classificationColor, (v) => { theme.classificationColor = v; });
+  }
+
+  private renderLegalSection(c: HTMLElement, theme: PdfTheme) {
+    new Setting(c).setName("Legal notice").setHeading();
+
+    this.addToggle(c, "Legal notice", () => theme.showLegal, (v) => { theme.showLegal = v; });
+    this.addText(c, "Legal notice title", () => theme.legalTitle, (v) => { theme.legalTitle = v; });
+    this.addTextArea(c, "Legal notice text", () => theme.legalText, (v) => { theme.legalText = v; });
+  }
+
+  private renderMetadataSection(c: HTMLElement, theme: PdfTheme) {
+    new Setting(c).setName("Document properties").setHeading();
+
+    this.addToggle(c, "PDF metadata", () => theme.includeMetadata, (v) => { theme.includeMetadata = v; }, {
+      desc: "Write title/author/subject/keywords into the PDF properties (from frontmatter)",
+    });
+  }
+
+  // --- Import / export ------------------------------------------------------
 
   private exportThemeToJson(theme: PdfTheme) {
     const exportData: Record<string, unknown> = { ...theme };
@@ -544,6 +480,9 @@ export class ThemedPdfSettingTab extends PluginSettingTab {
             ...(data as Partial<PdfTheme>),
             id: "custom-" + Date.now(),
             margins: { ...blank.margins, ...((data.margins as Record<string, string>) || {}) },
+            coverInfoFields: Array.isArray(data.coverInfoFields)
+              ? (data.coverInfoFields as unknown[]).map(String)
+              : [],
           };
           delete (imported as unknown as Record<string, unknown>).builtin;
 
