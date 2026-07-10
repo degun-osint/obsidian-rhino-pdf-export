@@ -30,6 +30,15 @@ them, the export modal has the last word.
 - **"Export note as PDF with last settings"** command: no dialog, uses the pinned
   theme and writes next to the note (or to the last folder used). Overwrites an
   existing PDF of the same name.
+- **Embedded fonts**: point a theme at font files in your vault (woff2, woff, ttf,
+  otf) and they are inlined into the PDF. A document then renders identically on
+  any machine, whether or not the font is installed — which is what a client's
+  charter usually requires. One row per weight, so bold is a real bold rather
+  than a synthesized one.
+- **Font metadata is read from the file**, not guessed from its name: pick a font
+  and its family, weight and style fill themselves in. Variable fonts report
+  their real range (Inter is `100 900`). "Import from folder" turns a folder of
+  font files into ready-to-use rows in one click.
 - **Duplicate** button on every theme, built-ins included.
 
 ### Changed
@@ -41,6 +50,9 @@ them, the export modal has the last word.
 - Overrides resolve consistently everywhere: modal > frontmatter > theme. Batch
   export used to let the frontmatter win over the dialog.
 - Merged batch exports honour each note's page-break settings.
+- **Fonts are bundled.** Inter and JetBrains Mono ship as `@font-face` rules with
+  the woff2 embedded (latin + latin-ext subsets, 173 KB), injected only when a
+  theme uses them. Exports are fully offline and make no network request.
 - Theme editor sections follow the order things appear in the document, margins
   are four inputs, and watermark opacity/rotation are sliders. All three used to
   discard invalid input without a word.

@@ -10,6 +10,8 @@ Configuration is now layered: **the theme carries the defaults, the note overrid
 - **"Save to note"**: writes those overrides into the note's frontmatter, so a one-off tweak becomes reproducible
 - **`theme:` frontmatter key**: pin a base theme per note
 - **`order:` frontmatter key**: sort chapters in a merged export, without `01-` filename prefixes
+- **Embedded fonts**: point a theme at font files in your vault and they are inlined into the PDF. Family, weight and style are read from the file itself; "Import from folder" configures a whole family in one click
+- **Fully offline**: fonts are bundled, exporting makes no network request
 - **Quick export command**: no dialog, straight to a PDF next to the note
 - **Duplicate** any theme, built-ins included
 
@@ -45,7 +47,8 @@ Configuration is now layered: **the theme carries the defaults, the note overrid
 - **Pagination**: configurable footer format (`{page}` / `{pages}`, via paged.js CSS counters)
 - **Legal notice**: optional block at the end of the document
 - **CSS Paged Media**: rendered via paged.js (running headers, margin boxes, page counters)
-- **Offline**: paged.js is bundled locally, no CDN required
+- **Embedded fonts**: reference font files from your vault (woff2, woff, ttf, otf) and they are inlined into the PDF — same rendering on every machine, even if the font is not installed
+- **Offline**: paged.js and the Inter / JetBrains Mono fonts are bundled locally. Exporting never touches the network, so a document can be exported air-gapped and the act of exporting it leaks nothing
 
 ## Installation
 
@@ -197,6 +200,30 @@ tags: [osint, report]
 
 The selection is remembered where you save it: **Save to note** writes `coverInfo: [author, case_id]` into the note, and **Save as theme default** stores it as the theme's `coverInfoFields`, applied to every note exported with it.
 
+### Embedded fonts
+
+A font named in **Body font** / **Code font** must be installed on the machine running the export, or it falls back silently. To avoid that, drop the font files in your vault and reference them under **Settings → theme → Embedded fonts**: they get inlined into the PDF, so the document renders identically everywhere.
+
+Drop your font files in the vault, then either:
+
+- **Import from folder** — pick the folder and every font in it becomes a row, ready to use;
+- **Add font file** — start typing a path, pick from the suggestions.
+
+Either way the family, weight and style are **read from the font file itself**, not guessed from its name. Variable fonts are detected and get their real range (`100 900` for Inter). Correct any field afterwards if you want to.
+
+| Field | Example |
+|---|---|
+| Family | `Marianne` |
+| File | `assets/fonts/Marianne-Regular.woff2` |
+| Weight | `400`, or `100 900` for a variable font |
+| Style | Normal / Italic |
+
+Add one row per weight and style you actually use — with only a regular file, the bold is synthesized by the renderer and it shows in print. Then use the family in the font fields: `'Marianne', sans-serif`.
+
+Supported formats are woff2 (recommended), woff, ttf and otf. Font collections (`.ttc`) are not supported — `@font-face` cannot use them. An embedded family takes precedence over a system font of the same name. If a file is missing or invalid, the export tells you rather than quietly falling back.
+
+Inter and JetBrains Mono are already bundled with the plugin — no need to add them.
+
 ### External links
 
 The **External links** theme option controls how external (`http`/`https`) link
@@ -235,9 +262,10 @@ Nested callouts are supported. Custom callouts from the [Callout Manager](https:
 Settings → Rhino PDF Export:
 
 - Browse built-in themes
+- Duplicate any theme, built-ins included, to start from it
 - Create / edit / delete custom themes
 - Import / export themes as JSON
-- Per theme: colors, logo (vault path), cover page, subtitle, table of contents (+ custom title), header logo, header text, pagination, footer text, classification banner (text + color), watermark (text, color, opacity, size, rotation), legal notice, fonts, font size, page size, orientation, margins, page break before headings (H1/H2/H3)
+- Per theme: colors, logo (vault path), cover page, subtitle, cover info block, table of contents (+ custom title), heading numbering, header logo, header text, pagination format, footer text, external link display, classification banner (text + color), watermark (text, color, opacity, size, rotation), legal notice, PDF metadata, fonts, embedded font files, font size, page size, orientation, margins, page break before headings (H1/H2/H3)
 - Header/footer/classification text support variables (see [Help & reference](#help--reference))
 
 ## Development
@@ -253,19 +281,28 @@ npm run build   # production
 ```
 src/
 ├── main.ts           # Entry point, commands and context menus
-├── types.ts          # PdfTheme, DocConfig, PluginSettings interfaces
+├── types.ts          # PdfTheme, DocConfig, CustomFont, PluginSettings
 ├── themes.ts         # Built-in themes + factory + duplication
 ├── settings.ts       # Settings tab (theme editor, JSON import/export)
 ├── modal.ts          # Export modal with live preview
 ├── batch.ts          # Batch export (full folder)
 ├── doc-config-ui.ts  # "This document" overrides section, shared by both modals
 ├── frontmatter.ts    # rhino-pdf validation + theme resolution
-├── export.ts         # Shared note → PDF pipeline
+├── export.ts         # Shared note → PDF pipeline + asset cache
+├── font-meta.ts      # sfnt/woff/woff2 parser: family, weight, style
+├── font-picker.ts    # Vault font autocomplete + folder import
 ├── render.ts         # HTML + CSS Paged Media generation
 ├── pdf.ts            # Electron BrowserWindow + printToPDF
 └── vendor/
-    └── paged.polyfill.txt  # paged.js v0.4.3 bundled
+    ├── paged.polyfill.txt   # paged.js v0.4.3 bundled
+    ├── inter.css            # Inter, woff2 inlined as data URIs
+    └── jetbrains-mono.css   # JetBrains Mono, same
+
+scripts/
+└── vendor-fonts.mjs  # Regenerates the two vendored stylesheets
 ```
+
+Fonts are vendored, not fetched. `node scripts/vendor-fonts.mjs` re-downloads Inter and JetBrains Mono from Google Fonts, keeps the latin and latin-ext subsets, and inlines each woff2 as a data URI. Both are variable fonts, so one `@font-face` per subset carries a `font-weight` range.
 
 ### Tech Stack
 
@@ -283,6 +320,11 @@ This plugin bundles and redistributes the following MIT-licensed libraries:
 
 - [paged.js](https://pagedjs.org) v0.4.3 — CSS Paged Media polyfill © 2018 Adam Hyde
 - [pdf-lib](https://github.com/Hopding/pdf-lib) v1.17.1 — PDF generation © 2019 Andrew Dillon
+
+And the following typefaces, under the SIL Open Font License 1.1:
+
+- [Inter](https://github.com/rsms/inter) © 2016 The Inter Project Authors
+- [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono) © 2020 The JetBrains Mono Project Authors
 
 Their full license texts are reproduced in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
