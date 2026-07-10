@@ -19,10 +19,10 @@ import {
 import { generatePdf } from "./pdf";
 import { readDocConfig, resolveBaseTheme, resolveCoverInfoKeys, resolveTheme } from "./frontmatter";
 import {
+  AssetCache,
   exportNoteToPdf,
   extractTitle,
   getVaultBasePath,
-  loadLogoDataUri,
   renderNoteHtml,
 } from "./export";
 import { createDocConfigState, renderDocConfigSection, type DocConfigState, type DocField } from "./doc-config-ui";
@@ -69,6 +69,7 @@ export class BatchExportModal extends Modal {
   private previewTempFile: string | null = null;
   private previewTimer: number | null = null;
   private previewGen = 0;
+  private assetCache: AssetCache;
 
   constructor(
     app: App,
@@ -80,6 +81,7 @@ export class BatchExportModal extends Modal {
     this.folder = folder;
     this.settings = settings;
     this.saveSettings = saveSettings;
+    this.assetCache = new AssetCache(app);
 
     const allThemes = this.allThemes();
     this.selectedTheme =
@@ -250,13 +252,13 @@ export class BatchExportModal extends Modal {
 
     const title = extractTitle(mdContent, firstFile.basename);
     const bodyHtml = await renderNoteHtml(this.app, mdContent, firstFile.path);
-    const logoDataUri = await loadLogoDataUri(this.app, theme.logoPath);
+    const assets = await this.assetCache.get(theme, false);
     if (gen !== this.previewGen) return;
 
     const fm = this.app.metadataCache.getFileCache(firstFile)?.frontmatter ?? {};
     const vars = makeDocVars(title, firstFile.basename, fm);
     const coverInfo = coverInfoRows(fm, resolveCoverInfoKeys(theme, docConfig));
-    const html = buildHtml(bodyHtml, title, theme, logoDataUri, vars, coverInfo);
+    const html = buildHtml(bodyHtml, title, theme, assets, vars, coverInfo);
 
     const tempFile = path.join(os.tmpdir(), `rhino-batch-preview-${gen}-${Date.now()}.html`);
     fs.writeFileSync(tempFile, html, "utf-8");
@@ -356,7 +358,7 @@ export class BatchExportModal extends Modal {
     progressBar.max = mdFiles.length;
 
     const theme = this.getEffectiveTheme();
-    const logoDataUri = await loadLogoDataUri(this.app, theme.logoPath);
+    const assets = await this.assetCache.get(theme);
 
     const sections: MergedSection[] = [];
 
@@ -391,7 +393,7 @@ export class BatchExportModal extends Modal {
 
     const mergedTitle = folderName;
     const vars = makeDocVars(mergedTitle, folderName, {});
-    const html = buildMergedHtml(sections, mergedTitle, theme, logoDataUri, vars);
+    const html = buildMergedHtml(sections, mergedTitle, theme, assets, vars);
     const meta = theme.includeMetadata ? makePdfMetadata(mergedTitle, {}) : undefined;
     await generatePdf(html, result.filePath, meta);
 
@@ -437,6 +439,9 @@ export class BatchExportModal extends Modal {
       theme,
       coverInfoKeys: resolveCoverInfoKeys(theme, docConfig),
       outputPath: path.join(outputDir, file.basename + ".pdf"),
+      // Cached per logo+font configuration, so a folder of notes sharing a
+      // theme reads each font file once and warns at most once.
+      assets: await this.assetCache.get(theme),
     });
   }
 }

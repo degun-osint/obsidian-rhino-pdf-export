@@ -6,7 +6,7 @@ import { ExportModal } from "./modal";
 import { BatchExportModal } from "./batch";
 import { BUILTIN_THEMES, createBlankTheme } from "./themes";
 import { readDocConfig, resolveBaseTheme, resolveCoverInfoKeys, resolveTheme } from "./frontmatter";
-import { exportNoteToPdf, getVaultBasePath } from "./export";
+import { AssetCache, exportNoteToPdf, getVaultBasePath } from "./export";
 import * as path from "path";
 
 export default class RhinoPdfExport extends Plugin {
@@ -103,12 +103,14 @@ export default class RhinoPdfExport extends Plugin {
 
     const notice = new Notice(`Exporting ${file.basename}…`, 0);
     try {
+      const theme = resolveTheme(base, docConfig);
       await exportNoteToPdf({
         app: this.app,
         file,
-        theme: resolveTheme(base, docConfig),
+        theme,
         coverInfoKeys: resolveCoverInfoKeys(base, docConfig),
         outputPath,
+        assets: await new AssetCache(this.app).get(theme),
       });
       new Notice(`PDF exported → ${outputPath}`);
     } catch (err: unknown) {
@@ -154,6 +156,10 @@ export default class RhinoPdfExport extends Plugin {
         ...defaults,
         ...t,
         margins: { ...defaults.margins, ...t.margins },
+        // Guard the collections: a hand-edited or truncated themes file must not
+        // crash the settings tab on `.join()` / `.map()`.
+        coverInfoFields: Array.isArray(t.coverInfoFields) ? t.coverInfoFields : [],
+        customFonts: Array.isArray(t.customFonts) ? t.customFonts : [],
       }));
     }
   }

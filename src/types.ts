@@ -1,3 +1,19 @@
+/**
+ * One font file from the vault, embedded as an @font-face rule.
+ *
+ * A family needs one entry per weight/style it ships: without a real bold file,
+ * the renderer synthesizes one and it shows in print.
+ */
+export interface CustomFont {
+  /** CSS family name to use in bodyFont/codeFont, e.g. "Marianne". */
+  family: string;
+  /** Vault-relative path, e.g. "assets/fonts/Marianne-Regular.woff2". */
+  path: string;
+  /** A single weight ("400") or a variable-font range ("400 700"). */
+  weight: string;
+  style: "normal" | "italic";
+}
+
 export interface PdfTheme {
   id: string;
   name: string;
@@ -43,6 +59,8 @@ export interface PdfTheme {
   bodyFont: string;
   codeFont: string;
   bodyFontSize: string; // e.g. "10pt"
+  /** Font files embedded from the vault, so exports don't depend on the machine. */
+  customFonts: CustomFont[];
 
   // Page
   pageSize: string; // "A4", "Letter"

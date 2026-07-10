@@ -1,8 +1,10 @@
-import { App, PluginSettingTab, Setting, Notice, TextComponent } from "obsidian";
+import { App, DropdownComponent, Notice, PluginSettingTab, Setting, TextComponent, TFile, TFolder } from "obsidian";
 import type RhinoPdfExport from "./main";
-import type { PdfTheme } from "./types";
+import type { CustomFont, PdfTheme } from "./types";
 import { BUILTIN_THEMES, createBlankTheme, duplicateTheme } from "./themes";
-import { isCssLength } from "./frontmatter";
+import { isCssLength, isFontFamily, isFontWeight } from "./frontmatter";
+import { readFontMetadata } from "./font-meta";
+import { FontFileSuggest, FontFolderModal, fontFilesIn, readFontFiles } from "./font-picker";
 
 const PAGE_SIZES = ["A3", "A4", "A5", "Letter", "Legal", "Tabloid"];
 const MARGIN_SIDES = ["top", "right", "bottom", "left"] as const;
@@ -351,9 +353,176 @@ export class ThemedPdfSettingTab extends PluginSettingTab {
 
   private renderTypographySection(c: HTMLElement, theme: PdfTheme) {
     new Setting(c).setName("Typography").setHeading();
-    this.addText(c, "Body font", () => theme.bodyFont, (v) => { theme.bodyFont = v; });
+    this.addText(c, "Body font", () => theme.bodyFont, (v) => { theme.bodyFont = v; }, {
+      desc: "CSS font stack, e.g. 'Inter', sans-serif. Inter and JetBrains Mono are bundled.",
+    });
     this.addText(c, "Code font", () => theme.codeFont, (v) => { theme.codeFont = v; });
     this.addLength(c, "Font size", () => theme.bodyFontSize, (v) => { theme.bodyFontSize = v; });
+
+    this.renderCustomFonts(c, theme);
+  }
+
+  /**
+   * Font files embedded from the vault. Without them a font must be installed on
+   * whichever machine runs the export, and a missing one falls back silently.
+   */
+  private renderCustomFonts(c: HTMLElement, theme: PdfTheme) {
+    new Setting(c).setName("Embedded fonts").setHeading();
+    c.createEl("p", {
+      text:
+        "Embed font files stored in your vault (woff2, woff, ttf, otf), so exports look the " +
+        "same everywhere and work offline. Pick a file and its family, weight and style are " +
+        "read from it. Add one row per weight: without a real bold file, the renderer fakes " +
+        "one. Then use the family name in the font fields above.",
+      cls: "setting-item-description",
+    });
+
+    theme.customFonts.forEach((font, index) => {
+      const row = new Setting(c).setClass("rhino-font-row");
+
+      let familyInput: TextComponent;
+      let weightInput: TextComponent;
+      let styleDropdown: DropdownComponent;
+
+      row.addText((t) => {
+        familyInput = t;
+        t.setPlaceholder("Family").setValue(font.family).onChange((v) => {
+          t.inputEl.toggleClass("rhino-invalid", v.trim() !== "" && !isFontFamily(v));
+          font.family = v.trim();
+          this.save();
+        });
+      });
+
+      row.addText((t) => {
+        // An example vault path, not UI prose: sentence case does not apply.
+        // eslint-disable-next-line obsidianmd/ui/sentence-case
+        t.setPlaceholder("assets/fonts/Marianne-Regular.woff2")
+          .setValue(font.path)
+          .onChange((v) => {
+            font.path = v.trim();
+            this.save();
+          });
+        t.inputEl.addClass("rhino-font-path");
+
+        new FontFileSuggest(this.app, t.inputEl, (file) => {
+          void this.fillFromFontFile(file, font, familyInput, weightInput, styleDropdown);
+        });
+      });
+
+      row.addText((t) => {
+        weightInput = t;
+        t.setPlaceholder("400").setValue(font.weight).onChange((v) => {
+          t.inputEl.toggleClass("rhino-invalid", v.trim() !== "" && !isFontWeight(v));
+          font.weight = v.trim();
+          this.save();
+        });
+        t.inputEl.addClass("rhino-font-weight");
+      });
+
+      row.addDropdown((dd) => {
+        styleDropdown = dd;
+        dd.addOption("normal", "Normal");
+        dd.addOption("italic", "Italic");
+        dd.setValue(font.style).onChange((v) => {
+          font.style = v as CustomFont["style"];
+          this.save();
+        });
+      });
+
+      row.addExtraButton((btn) => {
+        btn.setIcon("trash").setTooltip("Remove").onClick(async () => {
+          theme.customFonts.splice(index, 1);
+          await this.plugin.saveSettings();
+          this.openThemeEditor(theme);
+        });
+      });
+    });
+
+    new Setting(c)
+      .addButton((btn) => {
+        btn.setButtonText("Add font file").onClick(async () => {
+          theme.customFonts.push({ family: "", path: "", weight: "400", style: "normal" });
+          await this.plugin.saveSettings();
+          this.openThemeEditor(theme);
+        });
+      })
+      .addButton((btn) => {
+        btn.setButtonText("Import from folder").onClick(() => {
+          new FontFolderModal(this.app, (folder) => {
+            void this.importFontsFromFolder(folder, theme);
+          }).open();
+        });
+      });
+  }
+
+  /** Fill in family/weight/style from the chosen file's own metadata. */
+  private async fillFromFontFile(
+    file: TFile,
+    font: CustomFont,
+    familyInput: TextComponent,
+    weightInput: TextComponent,
+    styleDropdown: DropdownComponent
+  ) {
+    font.path = file.path;
+    const metadata = readFontMetadata(await this.app.vault.readBinary(file));
+    if (!metadata) {
+      new Notice(`Could not read font metadata from ${file.name}. Fill the fields manually.`);
+      await this.plugin.saveSettings();
+      return;
+    }
+
+    font.family = metadata.family;
+    font.weight = metadata.weight;
+    font.style = metadata.style;
+
+    familyInput.setValue(metadata.family);
+    familyInput.inputEl.toggleClass("rhino-invalid", !isFontFamily(metadata.family));
+    weightInput.setValue(metadata.weight);
+    weightInput.inputEl.toggleClass("rhino-invalid", !isFontWeight(metadata.weight));
+    styleDropdown.setValue(metadata.style);
+
+    await this.plugin.saveSettings();
+  }
+
+  /** Add one row per readable font file in the folder, skipping known paths. */
+  private async importFontsFromFolder(folder: TFolder, theme: PdfTheme) {
+    const files = fontFilesIn(folder);
+    const known = new Set(theme.customFonts.map((f) => f.path));
+    const results = await readFontFiles(this.app, files.filter((f) => !known.has(f.path)));
+
+    const added: CustomFont[] = [];
+    const skipped: string[] = [];
+    for (const { file, metadata } of results) {
+      if (!metadata || !isFontFamily(metadata.family) || !isFontWeight(metadata.weight)) {
+        skipped.push(file.name);
+        continue;
+      }
+      added.push({
+        family: metadata.family,
+        path: file.path,
+        weight: metadata.weight,
+        style: metadata.style,
+      });
+    }
+
+    if (added.length === 0 && skipped.length === 0) {
+      new Notice("No new font files in that folder.");
+      return;
+    }
+
+    added.sort(
+      (a, b) =>
+        a.family.localeCompare(b.family) ||
+        parseInt(a.weight) - parseInt(b.weight) ||
+        a.style.localeCompare(b.style)
+    );
+    theme.customFonts.push(...added);
+    await this.plugin.saveSettings();
+
+    const parts = [`${added.length} font${added.length > 1 ? "s" : ""} added`];
+    if (skipped.length > 0) parts.push(`${skipped.length} skipped: ${skipped.join(", ")}`);
+    new Notice(parts.join(" — "));
+    this.openThemeEditor(theme);
   }
 
   private renderCoverSection(c: HTMLElement, theme: PdfTheme) {
@@ -501,6 +670,9 @@ export class ThemedPdfSettingTab extends PluginSettingTab {
             margins: { ...blank.margins, ...((data.margins as Record<string, string>) || {}) },
             coverInfoFields: Array.isArray(data.coverInfoFields)
               ? (data.coverInfoFields as unknown[]).map(String)
+              : [],
+            customFonts: Array.isArray(data.customFonts)
+              ? (data.customFonts as CustomFont[])
               : [],
           };
           delete (imported as unknown as Record<string, unknown>).builtin;

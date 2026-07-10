@@ -3,10 +3,10 @@ import type { DocConfig, PdfTheme, PluginSettings } from "./types";
 import { BUILTIN_THEMES, duplicateTheme } from "./themes";
 import { buildHtml, makeDocVars, coverInfoRows } from "./render";
 import {
+  AssetCache,
   exportNoteToPdf,
   extractTitle,
   getVaultBasePath,
-  loadLogoDataUri,
   renderNoteHtml,
 } from "./export";
 import {
@@ -63,7 +63,7 @@ export class ExportModal extends Modal {
   private previewGen = 0;
   private cachedBodyHtml: string | null = null;
   private cachedTitle: string | null = null;
-  private cachedLogoDataUris: Map<string, string> = new Map();
+  private assetCache: AssetCache;
   private cachedFrontmatter: Record<string, unknown> = {};
   private pluginId: string;
 
@@ -79,6 +79,7 @@ export class ExportModal extends Modal {
     this.settings = settings;
     this.saveSettings = saveSettings;
     this.pluginId = pluginId;
+    this.assetCache = new AssetCache(app);
 
     // metadataCache is synchronous, so the note's config is available before
     // onOpen() renders the controls seeded from it.
@@ -361,16 +362,6 @@ export class ExportModal extends Modal {
     this.cachedBodyHtml = await renderNoteHtml(this.app, mdContent, this.file.path);
   }
 
-  /** Logos are re-read on every preview otherwise, once per keystroke. */
-  private async getLogoDataUri(logoPath: string): Promise<string> {
-    if (!logoPath) return "";
-    const cached = this.cachedLogoDataUris.get(logoPath);
-    if (cached !== undefined) return cached;
-    const uri = await loadLogoDataUri(this.app, logoPath);
-    this.cachedLogoDataUris.set(logoPath, uri);
-    return uri;
-  }
-
   /** Coalesce keystrokes: each one used to rerun paged.js on a fresh webview. */
   private schedulePreview() {
     if (this.previewTimer !== null) window.clearTimeout(this.previewTimer);
@@ -385,12 +376,12 @@ export class ExportModal extends Modal {
 
     const gen = ++this.previewGen;
     const theme = this.getEffectiveTheme();
-    const logoDataUri = await this.getLogoDataUri(theme.logoPath);
+    const assets = await this.assetCache.get(theme);
     if (gen !== this.previewGen) return;
 
     const vars = makeDocVars(this.cachedTitle, this.file.basename, this.cachedFrontmatter);
     const coverInfo = coverInfoRows(this.cachedFrontmatter, this.getCoverInfoKeys());
-    const html = buildHtml(this.cachedBodyHtml, this.cachedTitle, theme, logoDataUri, vars, coverInfo);
+    const html = buildHtml(this.cachedBodyHtml, this.cachedTitle, theme, assets, vars, coverInfo);
 
     const tempFile = path.join(os.tmpdir(), `rhino-preview-${gen}-${Date.now()}.html`);
     fs.writeFileSync(tempFile, html, "utf-8");
@@ -442,12 +433,14 @@ export class ExportModal extends Modal {
     this.settings.lastOutputDir = path.dirname(result.filePath);
     await this.saveSettings();
 
+    const theme = this.getEffectiveTheme();
     await exportNoteToPdf({
       app: this.app,
       file: this.file,
-      theme: this.getEffectiveTheme(),
+      theme,
       coverInfoKeys: this.getCoverInfoKeys(),
       outputPath: result.filePath,
+      assets: await this.assetCache.get(theme),
     });
     new Notice(`PDF exported → ${path.basename(result.filePath)}`);
   }

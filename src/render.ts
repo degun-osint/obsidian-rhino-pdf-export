@@ -1,15 +1,46 @@
 import type { PdfTheme, DocVars, PdfMetadata, InfoRow } from "./types";
 
 /**
+ * Fonts vendored at build time as @font-face rules with the woff2 inlined.
+ * Exports must not touch the network: a request to Google Fonts would leak the
+ * fact that a document is being exported, and would fail offline.
+ */
+const BUNDLED_FONTS: { pattern: RegExp; css: string }[] = [
+  { pattern: /\bInter\b/i, css: process.env.INTER_CSS as unknown as string },
+  { pattern: /\bJetBrains\s+Mono\b/i, css: process.env.JETBRAINS_MONO_CSS as unknown as string },
+];
+
+/** Embed a bundled family only when the theme actually asks for it. */
+function bundledFontFaces(theme: PdfTheme): string {
+  const requested = `${theme.bodyFont} ${theme.codeFont}`;
+  return BUNDLED_FONTS.filter((f) => f.pattern.test(requested))
+    .map((f) => f.css)
+    .join("\n");
+}
+
+/**
+ * Binary assets resolved from the vault before rendering, since building the
+ * HTML is synchronous while reading the vault is not.
+ */
+export interface RenderAssets {
+  logoDataUri: string;
+  /** @font-face rules for the theme's vault fonts, from buildCustomFontCss(). */
+  fontFaceCss: string;
+}
+
+export const NO_ASSETS: RenderAssets = { logoDataUri: "", fontFaceCss: "" };
+
+/**
  * Build the CSS for PDF rendering from a theme.
  */
-function buildCss(theme: PdfTheme): string {
+function buildCss(theme: PdfTheme, fontFaceCss = ""): string {
   const p = theme.primaryColor;
   const a = theme.accentColor;
   const m = theme.margins;
 
   return `
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+${bundledFontFaces(theme)}
+${fontFaceCss}
 
 @page {
   size: ${theme.pageSize}${theme.orientation === "landscape" ? " landscape" : ""};
@@ -678,11 +709,12 @@ export function buildHtml(
   bodyHtml: string,
   title: string,
   theme: PdfTheme,
-  logoDataUri: string,
+  assets: RenderAssets,
   vars: DocVars,
   coverInfo: InfoRow[] = []
 ): string {
-  const css = buildCss(theme);
+  const { logoDataUri } = assets;
+  const css = buildCss(theme, assets.fontFaceCss);
 
   // Table of contents (extract headings + inject anchor IDs into the body)
   let toc = "";
@@ -743,9 +775,10 @@ export function buildMergedHtml(
   sections: MergedSection[],
   mergedTitle: string,
   theme: PdfTheme,
-  logoDataUri: string,
+  assets: RenderAssets,
   vars: DocVars
 ): string {
+  const { logoDataUri } = assets;
   // Neutralize the global break rules; each section carries its own below.
   const cssTheme: PdfTheme = {
     ...theme,
@@ -753,7 +786,7 @@ export function buildMergedHtml(
     pageBreakBeforeH2: false,
     pageBreakBeforeH3: false,
   };
-  const css = buildCss(cssTheme) + buildSectionPageBreakCss(sections);
+  const css = buildCss(cssTheme, assets.fontFaceCss) + buildSectionPageBreakCss(sections);
 
   // Build sections with page breaks between each note
   // Extract all H2/H3 headings from each section for a full TOC

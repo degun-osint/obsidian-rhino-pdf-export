@@ -76,6 +76,33 @@ export function isCssLength(value: string): boolean {
   return LENGTH_RE.test(value.trim());
 }
 
+// A custom font's family and weight are interpolated into an @font-face rule.
+// Both are whitelisted rather than escaped: there is no legitimate family name
+// that needs a quote or a brace.
+// Letters, digits, combining marks, spaces, dashes and underscores. Broad enough
+// for "ديوان ثلث" or "गुरुमुखी एमटी", narrow enough that no quote, brace,
+// semicolon, parenthesis or backslash can reach the stylesheet.
+const FONT_FAMILY_RE = /^[\p{L}\p{N}][\p{L}\p{N}\p{M} _-]{0,63}$/u;
+const FONT_WEIGHT_RE = /^\d{1,4}( \d{1,4})?$/;
+
+/** A font family name safe to interpolate, e.g. "Marianne", "IBM Plex Sans". */
+export function isFontFamily(value: string): boolean {
+  return FONT_FAMILY_RE.test(value.trim());
+}
+
+/**
+ * A single weight ("400") or a variable-font range ("100 900").
+ * CSS allows any value from 1 to 1000, not just multiples of 100 — Inter's
+ * wght axis really is 100–900, and some fonts go to 1000.
+ */
+export function isFontWeight(value: string): boolean {
+  const v = value.trim();
+  if (!FONT_WEIGHT_RE.test(v)) return false;
+  const parts = v.split(" ").map(Number);
+  if (parts.some((n) => n < 1 || n > 1000)) return false;
+  return parts.length === 1 || parts[0] < parts[1];
+}
+
 function coerceText(v: unknown): string | null {
   if (typeof v === "string") return v;
   if (typeof v === "number" || typeof v === "boolean") return String(v);

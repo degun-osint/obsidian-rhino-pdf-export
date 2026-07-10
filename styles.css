@@ -135,3 +135,27 @@
   background-color: var(--background-modifier-error);
   color: var(--text-on-accent);
 }
+
+/* Settings: embedded font rows */
+.rhino-font-row .setting-item-control {
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.rhino-font-row input[type="text"] {
+  width: 120px;
+}
+
+.rhino-font-row input.rhino-font-path {
+  width: 240px;
+}
+
+.rhino-font-row input.rhino-font-weight {
+  width: 72px;
+}
+
+/* Settings: font file suggester */
+.rhino-suggest-path {
+  font-size: 12px;
+  color: var(--text-muted);
+}
