@@ -91,9 +91,11 @@
   margin-left: 4px;
 }
 
-/* A value the generated stylesheet could not use */
-.rhino-invalid {
-  border-color: var(--text-error) !important;
+/* A value the generated stylesheet could not use. Scoped tightly enough to win
+   over the default input border without !important. */
+.rhino-pdf-export-modal input.rhino-invalid,
+.setting-item input.rhino-invalid {
+  border-color: var(--text-error);
 }
 
 /* Export modal: per-document overrides */

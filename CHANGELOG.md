@@ -4,6 +4,20 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.1] - 2026-07-10
+
+### Fixed
+- **`minAppVersion` corrected to 1.4.10.** 1.3.0 declared 1.4.0 but uses
+  `AbstractInputSuggest` and `processFrontMatter`, added in 1.4.10 and 1.4.4.
+  On older apps the font path autocomplete or "Save to note" would have thrown.
+- Removed the three `eslint-disable` comments the community-plugin review
+  rejects: the deprecations they silenced only exist in Obsidian's pre-release
+  typings, so pinning the `obsidian` dev dependency to the stable 1.12.x line
+  makes them unnecessary. The lint config now matches the reviewers' (typed
+  rules enabled), so `npx eslint src/` catches what the review catches.
+- Dropped an unnecessary type assertion and the last `!important` (styled by
+  specificity instead).
+
 ## [1.3.0] - 2026-07-10
 
 Configuration is now layered: the theme carries the defaults, the note overrides

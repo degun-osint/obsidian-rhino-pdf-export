@@ -375,5 +375,5 @@ export function diffFromTheme(effective: PdfTheme, base: PdfTheme): Partial<PdfT
     }
     if (effective[key] !== base[key]) diff[key] = effective[key];
   }
-  return diff as Partial<PdfTheme>;
+  return diff;
 }
