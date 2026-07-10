@@ -11,7 +11,13 @@
     "isolatedModules": true,
     "strictNullChecks": true,
     "skipLibCheck": true,
-    "lib": ["DOM", "ES2020"]
+    "lib": [
+      "DOM",
+      "ES2020"
+    ],
+    "types": []
   },
-  "include": ["src/**/*.ts"]
+  "include": [
+    "src/**/*.ts"
+  ]
 }

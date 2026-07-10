@@ -58,7 +58,7 @@ export class ThemedPdfSettingTab extends PluginSettingTab {
     const setting = new Setting(c).setName(name);
     if (opts.desc) setting.setDesc(opts.desc);
     setting.addText((t) => {
-      t.setPlaceholder("12mm");
+      t.setPlaceholder("CSS length");
       t.setValue(get()).onChange((v) => {
         const valid = isCssLength(v);
         t.inputEl.toggleClass("rhino-invalid", !valid);
@@ -312,7 +312,7 @@ export class ThemedPdfSettingTab extends PluginSettingTab {
     // anything that did not split into exactly four parts.
     const margins = new Setting(c)
       .setName("Margins")
-      .setDesc("Top, right, bottom, left. CSS lengths, e.g. 25mm")
+      .setDesc("Top, right, bottom, left, in CSS length units")
       .setClass("rhino-margins-row");
     for (const side of MARGIN_SIDES) {
       margins.addText((t) => {
@@ -622,7 +622,7 @@ export class ThemedPdfSettingTab extends PluginSettingTab {
     const json = JSON.stringify(exportData, null, 2);
     const blob = new Blob([json], { type: "application/json" });
     const url = URL.createObjectURL(blob);
-    const a = activeDocument.createElement("a");
+    const a = createEl("a");
     a.href = url;
     a.download = `${theme.name.replace(/[^a-zA-Z0-9_-]/g, "_")}.json`;
     a.click();
@@ -630,7 +630,7 @@ export class ThemedPdfSettingTab extends PluginSettingTab {
   }
 
   private importThemeFromJson() {
-    const input = activeDocument.createElement("input");
+    const input = createEl("input");
     input.type = "file";
     input.accept = ".json";
     input.addEventListener("change", () => {

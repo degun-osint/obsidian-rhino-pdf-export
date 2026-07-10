@@ -4,6 +4,28 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.2] - 2026-07-10
+
+### Changed
+- Cleared the community-plugin review warnings (257 down to 1). The review lints
+  with `types: []`, which drops `@types/node`, so `Buffer`, `fs`, `path`, `os`
+  and `zlib` resolved to `any` and tripped every `no-unsafe-*` rule.
+  - `font-meta.ts` now parses on `Uint8Array`/`DataView` with manual big-endian
+    reads and string decoding, touching a Node module only for the two zlib
+    calls. No behaviour change — verified against 211 system fonts and the woff2
+    the plugin bundles.
+  - A local `src/node.d.ts` declares the minimal `fs`/`path`/`os`/`zlib`/`Buffer`
+    surface actually used, mirroring the existing `electron.d.ts`, so the code
+    type-checks with or without `@types/node`. `@types/node` was dropped and the
+    project's own tsconfig now sets `types: []`, so a local `npx eslint src/`
+    matches the reviewers' result exactly.
+  - Injected `process.env.*` constants are typed, dropping three redundant
+    assertions; the JSON download link, file input and preview webview use
+    Obsidian's `createEl`; two CSS-length descriptions were reworded around a
+    sentence-case rule that miscapitalises units.
+- The one remaining warning is `prefer-setting-definitions` (the 1.13 declarative
+  settings API), deferred on purpose — see the migration note in CLAUDE.md.
+
 ## [1.3.1] - 2026-07-10
 
 ### Fixed

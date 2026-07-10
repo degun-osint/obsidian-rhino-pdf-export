@@ -6,8 +6,8 @@ import type { PdfTheme, DocVars, PdfMetadata, InfoRow } from "./types";
  * fact that a document is being exported, and would fail offline.
  */
 const BUNDLED_FONTS: { pattern: RegExp; css: string }[] = [
-  { pattern: /\bInter\b/i, css: process.env.INTER_CSS as unknown as string },
-  { pattern: /\bJetBrains\s+Mono\b/i, css: process.env.JETBRAINS_MONO_CSS as unknown as string },
+  { pattern: /\bInter\b/i, css: process.env.INTER_CSS },
+  { pattern: /\bJetBrains\s+Mono\b/i, css: process.env.JETBRAINS_MONO_CSS },
 ];
 
 /** Embed a bundled family only when the theme actually asks for it. */
@@ -646,7 +646,7 @@ function buildLegal(theme: PdfTheme): string {
  *   incomplete instead of silently truncating it.
  */
 function buildHeadScripts(theme: PdfTheme): string {
-  const pagedJsB64: string = process.env.PAGED_JS_B64 as unknown as string;
+  const pagedJsB64 = process.env.PAGED_JS_B64;
   return `  <script>
     window.__rhinoErrors = [];
     window.onerror = function(msg, src, line, col, err) {

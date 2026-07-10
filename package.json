@@ -1,6 +1,6 @@
 {
   "name": "obsidian-rhino-pdf-export",
-  "version": "1.3.1",
+  "version": "1.3.2",
   "private": true,
   "license": "GPL-3.0-only",
   "scripts": {
@@ -8,7 +8,6 @@
     "build": "node esbuild.config.mjs production"
   },
   "devDependencies": {
-    "@types/node": "^20.0.0",
     "esbuild": "^0.21.0",
     "eslint-plugin-obsidianmd": "^0.4.1",
     "obsidian": "~1.12.0",

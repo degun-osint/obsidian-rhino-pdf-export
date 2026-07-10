@@ -8,6 +8,9 @@ import * as zlib from "zlib";
  *
  * Supports the four formats @font-face accepts: woff2, woff, ttf and otf.
  * Font collections (.ttc) are not supported, and @font-face cannot use them.
+ *
+ * Works on Uint8Array/DataView rather than Node's Buffer so the types resolve
+ * without @types/node; only the two zlib calls touch a Node module.
  */
 export interface FontMetadata {
   family: string;
@@ -32,9 +35,31 @@ const WOFF2_TAGS = [
   "trak", "Zapf", "Silf", "Glat", "Gloc", "Feat", "Sill",
 ];
 
-type Tables = Map<string, Buffer>;
+type Tables = Map<string, Uint8Array>;
 
-function readUIntBase128(buf: Buffer, pos: number): [number, number] {
+// Big-endian reads. u32 goes through >>> 0 because a 32-bit shift can go
+// negative; i32 stays signed for the fvar fixed-point values.
+const u16 = (a: Uint8Array, o: number): number => (a[o] << 8) | a[o + 1];
+const u32 = (a: Uint8Array, o: number): number =>
+  ((a[o] << 24) | (a[o + 1] << 16) | (a[o + 2] << 8) | a[o + 3]) >>> 0;
+const i32 = (a: Uint8Array, o: number): number =>
+  (a[o] << 24) | (a[o + 1] << 16) | (a[o + 2] << 8) | a[o + 3];
+
+/** ASCII table tags and Mac-platform strings. */
+function latin1(a: Uint8Array, start: number, end: number): string {
+  let s = "";
+  for (let i = start; i < end; i++) s += String.fromCharCode(a[i]);
+  return s;
+}
+
+/** Windows-platform strings are UTF-16BE. */
+function utf16be(a: Uint8Array, start: number, end: number): string {
+  let s = "";
+  for (let i = start; i + 1 < end; i += 2) s += String.fromCharCode((a[i] << 8) | a[i + 1]);
+  return s;
+}
+
+function readUIntBase128(buf: Uint8Array, pos: number): [number, number] {
   let value = 0;
   for (let i = 0; i < 5; i++) {
     if (pos >= buf.length) throw new Error("truncated UIntBase128");
@@ -48,29 +73,29 @@ function readUIntBase128(buf: Buffer, pos: number): [number, number] {
 }
 
 /** Plain sfnt: the table directory points straight into the file. */
-function sfntTables(buf: Buffer): Tables {
-  const numTables = buf.readUInt16BE(4);
+function sfntTables(buf: Uint8Array): Tables {
+  const numTables = u16(buf, 4);
   const tables: Tables = new Map();
   for (let i = 0; i < numTables; i++) {
     const o = 12 + i * 16;
-    const tag = buf.subarray(o, o + 4).toString("latin1");
-    const off = buf.readUInt32BE(o + 8);
-    const len = buf.readUInt32BE(o + 12);
+    const tag = latin1(buf, o, o + 4);
+    const off = u32(buf, o + 8);
+    const len = u32(buf, o + 12);
     if (off + len <= buf.length) tables.set(tag, buf.subarray(off, off + len));
   }
   return tables;
 }
 
 /** WOFF1: every table is individually zlib-compressed. */
-function woffTables(buf: Buffer): Tables {
-  const numTables = buf.readUInt16BE(12);
+function woffTables(buf: Uint8Array): Tables {
+  const numTables = u16(buf, 12);
   const tables: Tables = new Map();
   for (let i = 0; i < numTables; i++) {
     const o = 44 + i * 20;
-    const tag = buf.subarray(o, o + 4).toString("latin1");
-    const off = buf.readUInt32BE(o + 4);
-    const compLength = buf.readUInt32BE(o + 8);
-    const origLength = buf.readUInt32BE(o + 12);
+    const tag = latin1(buf, o, o + 4);
+    const off = u32(buf, o + 4);
+    const compLength = u32(buf, o + 8);
+    const origLength = u32(buf, o + 12);
     const raw = buf.subarray(off, off + compLength);
     tables.set(tag, compLength < origLength ? zlib.inflateSync(raw) : raw);
   }
@@ -81,9 +106,9 @@ function woffTables(buf: Buffer): Tables {
  * WOFF2: one Brotli block holds every table back to back, sized by the
  * directory. `glyf`/`loca` may be transformed, but the tables we read never are.
  */
-function woff2Tables(buf: Buffer): Tables {
-  const numTables = buf.readUInt16BE(12);
-  const totalCompressedSize = buf.readUInt32BE(20);
+function woff2Tables(buf: Uint8Array): Tables {
+  const numTables = u16(buf, 12);
+  const totalCompressedSize = u32(buf, 20);
 
   let pos = 48;
   const entries: { tag: string; length: number }[] = [];
@@ -94,7 +119,7 @@ function woff2Tables(buf: Buffer): Tables {
 
     let tag: string;
     if (tagIndex === 0x3f) {
-      tag = buf.subarray(pos, pos + 4).toString("latin1");
+      tag = latin1(buf, pos, pos + 4);
       pos += 4;
     } else {
       tag = WOFF2_TAGS[tagIndex];
@@ -176,9 +201,9 @@ function deriveFamily(
 
 /**
  * Pull family (name ID 16, else 1) and subfamily (17, else 2) from the name
- * table, preferring the Windows platform records.
+ * table, preferring the Windows/en-US records.
  */
-function readNames(name: Buffer | undefined): {
+function readNames(name: Uint8Array | undefined): {
   family: string;
   subfamily: string;
   legacyFamily: string;
@@ -187,33 +212,30 @@ function readNames(name: Buffer | undefined): {
   const empty = { family: "", subfamily: "", legacyFamily: "", typographicFamily: "" };
   if (!name || name.length < 6) return empty;
 
-  const count = name.readUInt16BE(2);
-  const stringOffset = name.readUInt16BE(4);
+  const count = u16(name, 2);
+  const stringOffset = u16(name, 4);
   // nameID -> { priority, value }; the most English record wins.
   const found = new Map<number, { priority: number; value: string }>();
 
   for (let i = 0; i < count; i++) {
     const o = 6 + i * 12;
     if (o + 12 > name.length) break;
-    const platformID = name.readUInt16BE(o);
-    const languageID = name.readUInt16BE(o + 4);
-    const nameID = name.readUInt16BE(o + 6);
-    const length = name.readUInt16BE(o + 8);
-    const offset = name.readUInt16BE(o + 10);
+    const platformID = u16(name, o);
+    const languageID = u16(name, o + 4);
+    const nameID = u16(name, o + 6);
+    const length = u16(name, o + 8);
+    const offset = u16(name, o + 10);
     if (nameID !== 1 && nameID !== 2 && nameID !== 16 && nameID !== 17) continue;
 
     const start = stringOffset + offset;
     if (start + length > name.length) continue;
-    const bytes = name.subarray(start, start + length);
 
     let value: string;
     if (platformID === 3 || platformID === 0) {
       if (length % 2 !== 0) continue;
-      // Copy before swapping: swap16 mutates, and two name IDs routinely point
-      // at the same bytes — the second read would see them already swapped.
-      value = Buffer.from(bytes).swap16().toString("utf16le");
+      value = utf16be(name, start, start + length);
     } else {
-      value = bytes.toString("latin1");
+      value = latin1(name, start, start + length);
     }
     value = value.replace(/\0/g, "").trim();
     if (!value) continue;
@@ -240,15 +262,15 @@ function readNames(name: Buffer | undefined): {
 function readWeight(tables: Tables): string {
   const fvar = tables.get("fvar");
   if (fvar && fvar.length >= 12) {
-    const axisOffset = fvar.readUInt16BE(4);
-    const axisCount = fvar.readUInt16BE(8);
-    const axisSize = fvar.readUInt16BE(10);
+    const axisOffset = u16(fvar, 4);
+    const axisCount = u16(fvar, 8);
+    const axisSize = u16(fvar, 10);
     for (let i = 0; i < axisCount; i++) {
       const o = axisOffset + i * axisSize;
       if (o + 20 > fvar.length) break;
-      if (fvar.subarray(o, o + 4).toString("latin1") !== "wght") continue;
-      const min = Math.round(fvar.readInt32BE(o + 4) / 65536);
-      const max = Math.round(fvar.readInt32BE(o + 12) / 65536);
+      if (latin1(fvar, o, o + 4) !== "wght") continue;
+      const min = Math.round(i32(fvar, o + 4) / 65536);
+      const max = Math.round(i32(fvar, o + 12) / 65536);
       if (min > 0 && max > min) return `${min} ${max}`;
       if (min > 0) return String(min);
     }
@@ -256,7 +278,7 @@ function readWeight(tables: Tables): string {
 
   const os2 = tables.get("OS/2");
   if (os2 && os2.length >= 6) {
-    const weight = os2.readUInt16BE(4);
+    const weight = u16(os2, 4);
     // Some older fonts (Skia, and much of the classic Mac library) use Apple's
     // 1–9 scale rather than the 100–900 one CSS expects.
     if (weight >= 1 && weight <= 9) return String(weight * 100);
@@ -268,12 +290,12 @@ function readWeight(tables: Tables): string {
 function readStyle(tables: Tables, subfamily: string): "normal" | "italic" {
   const os2 = tables.get("OS/2");
   if (os2 && os2.length >= 64) {
-    const fsSelection = os2.readUInt16BE(62);
+    const fsSelection = u16(os2, 62);
     if (fsSelection & 0x01) return "italic";
     if (fsSelection & 0x40) return "normal"; // REGULAR bit, authoritative
   }
   const head = tables.get("head");
-  if (head && head.length >= 46 && head.readUInt16BE(44) & 0x02) return "italic";
+  if (head && head.length >= 46 && u16(head, 44) & 0x02) return "italic";
   return /italic|oblique/i.test(subfamily) ? "italic" : "normal";
 }
 
@@ -281,12 +303,12 @@ function readStyle(tables: Tables, subfamily: string): "normal" | "italic" {
  * Parse a font file. Returns null when the bytes are not a supported font,
  * rather than throwing at the caller.
  */
-export function readFontMetadata(data: ArrayBuffer | Buffer): FontMetadata | null {
+export function readFontMetadata(data: ArrayBuffer | Uint8Array): FontMetadata | null {
   try {
-    const buf = Buffer.isBuffer(data) ? data : Buffer.from(data);
+    const buf = data instanceof Uint8Array ? data : new Uint8Array(data);
     if (buf.length < 16) return null;
 
-    const magic = buf.subarray(0, 4).toString("latin1");
+    const magic = latin1(buf, 0, 4);
     if (magic === "ttcf") return null; // collection: @font-face cannot use it
 
     let tables: Tables;

@@ -344,7 +344,8 @@ export class ExportModal extends Modal {
 
   private async initPreview(container: HTMLElement) {
     await this.prepareContent();
-    const webview = activeDocument.createElement("webview");
+    // createEl has no key for Electron's <webview>; it is an HTMLElement at runtime.
+    const webview = createEl("webview" as "div");
     webview.addClass("rhino-webview");
     webview.setAttribute("webpreferences", "javascript=yes");
     this.previewWebview = webview;
