@@ -59,7 +59,7 @@ const FIELD_SPECS: Partial<Record<keyof PdfTheme, FieldSpec>> = {
 };
 
 /** Overridable theme fields, in declaration order. */
-const OVERRIDABLE_KEYS = Object.keys(FIELD_SPECS) as (keyof PdfTheme)[];
+export const OVERRIDABLE_KEYS = Object.keys(FIELD_SPECS) as (keyof PdfTheme)[];
 
 const MARGIN_SIDES = ["top", "right", "bottom", "left"] as const;
 
@@ -247,7 +247,7 @@ export function resolveBaseTheme(
  * A key that is present with an empty string still overrides — that is how the
  * modal clears a subtitle the theme defines.
  */
-function applyPartial(target: PdfTheme, patch: Partial<PdfTheme>): void {
+export function applyPartial(target: PdfTheme, patch: Partial<PdfTheme>): void {
   const dst = target as unknown as Record<string, unknown>;
   for (const [key, value] of Object.entries(patch)) {
     if (value === undefined) continue;
@@ -286,6 +286,42 @@ export function resolveCoverInfoKeys(
   if (modalCoverInfo) return modalCoverInfo;
   if (config.coverInfo) return config.coverInfo;
   return base.coverInfoFields ?? [];
+}
+
+/**
+ * Build the `rhino-pdf` block to write back into a note.
+ *
+ * Merges onto the existing block rather than replacing it: it may hold keys the
+ * modal does not expose (margins, colors) or does not understand, and losing
+ * them on a "Save to note" would be silent data loss.
+ *
+ * An override that fell back to its theme value is removed — but only if it was
+ * valid to begin with, so a typo the user made stays visible instead of being
+ * quietly swept away.
+ */
+export function mergeDocConfigBlock(opts: {
+  prev: Record<string, unknown>;
+  diff: Partial<PdfTheme>;
+  /** Overrides that were active (and valid) before this save. */
+  previousOverrides: Partial<PdfTheme>;
+  coverInfo: string[];
+  /** Set only when the user explicitly picked a theme in the modal. */
+  pinThemeId?: string;
+}): Record<string, unknown> {
+  const { prev, diff, previousOverrides, coverInfo, pinThemeId } = opts;
+  const next: Record<string, unknown> = { ...prev, ...diff };
+
+  for (const key of OVERRIDABLE_KEYS) {
+    if (key in diff) continue;
+    if (key in prev && key in previousOverrides) delete next[key];
+  }
+
+  if (coverInfo.length > 0) next.coverInfo = coverInfo;
+  else delete next.coverInfo;
+
+  if (pinThemeId) next.theme = pinThemeId;
+
+  return next;
 }
 
 /**

@@ -44,6 +44,19 @@ export const BUILTIN_THEMES: PdfTheme[] = [
   },
 ];
 
+/**
+ * Deep-copy a theme into a new custom one. Deep, because `margins` and
+ * `coverInfoFields` would otherwise be shared with the source theme and mutate
+ * it from the editor.
+ */
+export function duplicateTheme(theme: PdfTheme): PdfTheme {
+  const copy = JSON.parse(JSON.stringify(theme)) as PdfTheme;
+  copy.id = "custom-" + Date.now();
+  copy.name = `${theme.name} (copy)`;
+  delete copy.builtin;
+  return copy;
+}
+
 export function createBlankTheme(): PdfTheme {
   return {
     id: "custom-" + Date.now(),

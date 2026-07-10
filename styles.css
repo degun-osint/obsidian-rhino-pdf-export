@@ -89,3 +89,43 @@
 .rhino-margin-input input[type="text"] {
   width: 250px;
 }
+
+/* Export modal: per-document overrides */
+.rhino-doc-config {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  margin: 12px 0;
+}
+
+.rhino-doc-config > summary {
+  cursor: pointer;
+  padding: 8px 12px;
+  font-weight: var(--font-medium);
+  user-select: none;
+}
+
+.rhino-doc-config-body {
+  padding: 0 12px 4px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.rhino-doc-config-body .setting-item {
+  border-top: none;
+  padding: 8px 0;
+}
+
+.rhino-override-badge {
+  display: inline-block;
+  margin: 0 6px 6px 0;
+  padding: 2px 8px;
+  border-radius: var(--radius-s);
+  font-size: 12px;
+  cursor: pointer;
+  background-color: var(--background-modifier-hover);
+  color: var(--text-muted);
+}
+
+.rhino-override-badge.is-warning {
+  background-color: var(--background-modifier-error);
+  color: var(--text-on-accent);
+}
