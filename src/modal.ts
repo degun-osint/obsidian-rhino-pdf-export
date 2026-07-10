@@ -239,7 +239,9 @@ export class ExportModal extends Modal {
     }
 
     try {
-      const hadOwnOnClose = Object.prototype.hasOwnProperty.call(setting, "onClose");
+      // Own property vs inherited: restoring by assignment would shadow the
+      // prototype's onClose with undefined.
+      const hadOwnOnClose = Object.getOwnPropertyDescriptor(setting, "onClose") !== undefined;
       const originalOnClose = setting.onClose;
       setting.onClose = () => {
         if (hadOwnOnClose) setting.onClose = originalOnClose;
@@ -275,8 +277,9 @@ export class ExportModal extends Modal {
     let written: Record<string, unknown> = {};
 
     try {
-      await this.app.fileManager.processFrontMatter(this.file, (fm) => {
-        const raw = fm[DOC_CONFIG_KEY] as unknown;
+      await this.app.fileManager.processFrontMatter(this.file, (frontmatter: unknown) => {
+        const fm = frontmatter as Record<string, unknown>;
+        const raw = fm[DOC_CONFIG_KEY];
         const prev: Record<string, unknown> =
           typeof raw === "object" && raw !== null && !Array.isArray(raw)
             ? { ...(raw as Record<string, unknown>) }

@@ -137,6 +137,9 @@ export class ThemedPdfSettingTab extends PluginSettingTab {
     setting.addSlider((s) => {
       s.setLimits(limits.min, limits.max, limits.step)
         .setValue(get())
+        // Obsidian 1.13 always shows the value inline and deprecates this.
+        // Until then, dropping it hides the value entirely.
+        // eslint-disable-next-line @typescript-eslint/no-deprecated
         .setDynamicTooltip()
         .onChange((v) => {
           set(v);
@@ -168,6 +171,19 @@ export class ThemedPdfSettingTab extends PluginSettingTab {
 
   // --- Theme list -----------------------------------------------------------
 
+  /**
+   * Re-render the tab after a theme is added, duplicated, deleted or imported.
+   *
+   * Obsidian 1.13 deprecates `display()` in favour of the declarative
+   * `getSettingDefinitions()`. That API is `@since 1.13.0` and the current
+   * stable release is 1.12.x, so calling it would leave the settings tab empty
+   * for everyone. Migrate once 1.13 ships — see CLAUDE.md.
+   */
+  private refresh(): void {
+    // eslint-disable-next-line @typescript-eslint/no-deprecated
+    this.display();
+  }
+
   display() {
     const { containerEl } = this;
     containerEl.empty();
@@ -198,7 +214,7 @@ export class ThemedPdfSettingTab extends PluginSettingTab {
           const newTheme = createBlankTheme();
           this.plugin.settings.themes.push(newTheme);
           await this.plugin.saveSettings();
-          this.display();
+          this.refresh();
         });
       })
       .addButton((btn) => {
@@ -237,7 +253,7 @@ export class ThemedPdfSettingTab extends PluginSettingTab {
         this.plugin.settings.themes.push(copy);
         await this.plugin.saveSettings();
         new Notice(`Theme duplicated as "${copy.name}".`);
-        this.display();
+        this.refresh();
       });
     });
 
@@ -248,12 +264,15 @@ export class ThemedPdfSettingTab extends PluginSettingTab {
         });
       });
       row.addButton((btn) => {
+        // setDestructive() replaces this, but it is @since 1.13.0 and would
+        // throw on the current stable release.
+        // eslint-disable-next-line @typescript-eslint/no-deprecated
         btn.setIcon("trash").setWarning().onClick(async () => {
           this.plugin.settings.themes = this.plugin.settings.themes.filter(
             (t) => t.id !== theme.id
           );
           await this.plugin.saveSettings();
-          this.display();
+          this.refresh();
         });
       });
     }
@@ -268,7 +287,7 @@ export class ThemedPdfSettingTab extends PluginSettingTab {
 
     new Setting(containerEl).setName(`Edit: ${theme.name}`).setHeading();
     new Setting(containerEl).addButton((btn) => {
-      btn.setButtonText("Back").onClick(() => this.display());
+      btn.setButtonText("Back").onClick(() => this.refresh());
     });
 
     this.addText(containerEl, "Theme name", () => theme.name, (v) => { theme.name = v; });
@@ -488,7 +507,7 @@ export class ThemedPdfSettingTab extends PluginSettingTab {
 
           this.plugin.settings.themes.push(imported);
           void this.plugin.saveSettings().then(() => {
-            this.display();
+            this.refresh();
             new Notice(`Theme "${imported.name}" imported.`);
           });
         } catch (err: unknown) {
