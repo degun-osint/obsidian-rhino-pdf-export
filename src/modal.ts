@@ -8,11 +8,11 @@ import {
   Component,
   FileSystemAdapter,
 } from "obsidian";
-import type { PdfTheme, PluginSettings } from "./types";
+import type { DocConfig, PdfTheme, PluginSettings } from "./types";
 import { BUILTIN_THEMES } from "./themes";
 import { buildHtml, resolveImagePaths, makeDocVars, makePdfMetadata, applyPageBreaks, coverInfoRows, frontmatterToString } from "./render";
 import { generatePdf } from "./pdf";
-import { parseThemeOverrides, applyThemeOverrides } from "./frontmatter";
+import { readDocConfig, resolveBaseTheme, resolveTheme, resolveCoverInfoKeys } from "./frontmatter";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
@@ -30,13 +30,13 @@ export class ExportModal extends Modal {
   private file: TFile;
   private saveSettings: () => Promise<void>;
   private selectedTheme: PdfTheme;
-  private overrideSubtitle = "";
+  private modalEdits: Partial<PdfTheme> = {};
   private previewWebview: HTMLElement | null = null;
   private previewTempFile: string | null = null;
   private cachedBodyHtml: string | null = null;
   private cachedTitle: string | null = null;
   private cachedLogoDataUris: Map<string, string> = new Map();
-  private themeOverrides: Partial<PdfTheme> | null = null;
+  private docConfig: DocConfig;
   private cachedFrontmatter: Record<string, unknown> = {};
   private infoBlockKeys: Set<string> = new Set();
   private pluginId: string;
@@ -54,10 +54,17 @@ export class ExportModal extends Modal {
     this.saveSettings = saveSettings;
     this.pluginId = pluginId;
 
+    // metadataCache is synchronous, so the note's config is available before
+    // onOpen() builds the info-block checkboxes from it.
+    this.docConfig = readDocConfig(app, file);
+
     const allThemes = [...BUILTIN_THEMES, ...this.settings.themes];
-    this.selectedTheme =
-      allThemes.find((t) => t.id === this.settings.lastUsedThemeId) ||
-      allThemes[0];
+    const lastUsed =
+      allThemes.find((t) => t.id === this.settings.lastUsedThemeId) || allThemes[0];
+    this.selectedTheme = resolveBaseTheme(allThemes, this.docConfig, lastUsed);
+
+    const seeded = resolveCoverInfoKeys(this.selectedTheme, this.docConfig);
+    this.infoBlockKeys = new Set(seeded);
   }
 
   onOpen() {
@@ -85,9 +92,10 @@ export class ExportModal extends Modal {
       .setDesc("Leave empty to use theme default")
       .addText((t) => {
         t.setPlaceholder(this.selectedTheme.subtitle || "(theme default)")
-          .setValue(this.overrideSubtitle)
+          .setValue(this.modalEdits.subtitle ?? "")
           .onChange((v) => {
-            this.overrideSubtitle = v;
+            if (v) this.modalEdits.subtitle = v;
+            else delete this.modalEdits.subtitle;
             void this.updatePreview();
           });
       });
@@ -189,7 +197,6 @@ export class ExportModal extends Modal {
 
     const mdContent = await this.app.vault.cachedRead(this.file);
 
-    this.themeOverrides = parseThemeOverrides(mdContent);
     this.cachedFrontmatter = this.app.metadataCache.getFileCache(this.file)?.frontmatter ?? {};
 
     let title = this.file.basename;
@@ -227,14 +234,7 @@ export class ExportModal extends Modal {
   }
 
   private getEffectiveTheme(): PdfTheme {
-    let theme = this.selectedTheme;
-    if (this.themeOverrides) {
-      theme = applyThemeOverrides(theme, this.themeOverrides);
-    }
-    if (this.overrideSubtitle) {
-      theme = { ...theme, subtitle: this.overrideSubtitle };
-    }
-    return theme;
+    return resolveTheme(this.selectedTheme, this.docConfig, this.modalEdits);
   }
 
   private async updatePreview() {

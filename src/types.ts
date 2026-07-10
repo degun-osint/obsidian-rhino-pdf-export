@@ -15,6 +15,8 @@ export interface PdfTheme {
   showToc: boolean;
   tocTitle: string;
   subtitle: string;
+  // Frontmatter keys listed by default in the cover info block
+  coverInfoFields: string[];
 
   // Header (page 2+)
   showHeaderLogo: boolean;
@@ -68,6 +70,25 @@ export interface PdfTheme {
 }
 
 /**
+ * Document-level configuration, read from the `rhino-pdf` frontmatter key.
+ *
+ * `overrides` is kept separate from `theme`/`coverInfo`/`order` so those three
+ * can never leak into a resolved PdfTheme.
+ */
+export interface DocConfig {
+  /** Validated PdfTheme fields to override for this document. */
+  overrides: Partial<PdfTheme>;
+  /** Pin a base theme by id, falling back to name (case-insensitive). */
+  theme?: string;
+  /** Frontmatter keys to list in the cover info block (replaces the theme's). */
+  coverInfo?: string[];
+  /** Sort key for merged batch export; documents without one come last. */
+  order?: number;
+  /** Keys rejected by validation. Diagnostic only, never written back. */
+  ignoredKeys: string[];
+}
+
+/**
  * Per-document variables available to header/footer/classification text
  * placeholders ({title}, {filename}, {author}, {date}, {time}, {fm.KEY}).
  */
@@ -98,9 +119,12 @@ export interface InfoRow {
 export interface PluginSettings {
   themes: PdfTheme[];
   lastUsedThemeId: string;
+  /** Last folder a PDF was written to, reused by the quick-export command. */
+  lastOutputDir: string;
 }
 
 export const DEFAULT_SETTINGS: PluginSettings = {
   themes: [],
   lastUsedThemeId: "minimal",
+  lastOutputDir: "",
 };

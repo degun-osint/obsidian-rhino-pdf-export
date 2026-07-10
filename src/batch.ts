@@ -13,7 +13,7 @@ import type { PdfTheme, PluginSettings } from "./types";
 import { BUILTIN_THEMES } from "./themes";
 import { buildHtml, buildMergedHtml, resolveImagePaths, makeDocVars, makePdfMetadata, applyPageBreaks } from "./render";
 import { generatePdf } from "./pdf";
-import { parseThemeOverrides, applyThemeOverrides } from "./frontmatter";
+import { readDocConfig, resolveTheme } from "./frontmatter";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
@@ -389,11 +389,8 @@ export class BatchExportModal extends Modal {
   private async exportFile(file: TFile, outputDir: string) {
     const mdContent = await this.app.vault.cachedRead(file);
 
-    const effective = this.getEffectiveTheme();
-    const overrides = parseThemeOverrides(mdContent);
-    const theme = overrides
-      ? applyThemeOverrides(effective, overrides)
-      : effective;
+    const docConfig = readDocConfig(this.app, file);
+    const theme = resolveTheme(this.getEffectiveTheme(), docConfig);
 
     let title = file.basename;
     for (const line of mdContent.split("\n")) {

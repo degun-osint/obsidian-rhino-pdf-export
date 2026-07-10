@@ -160,10 +160,11 @@ export default class RhinoPdfExport extends Plugin {
   }
 
   async saveSettings() {
-    // Save themes to separate file, keep only lastUsedThemeId in data.json
+    // Themes live in their own file; data.json keeps only the light preferences.
     await this.saveThemesFile(this.settings.themes);
     await this.saveData({
       lastUsedThemeId: this.settings.lastUsedThemeId,
+      lastOutputDir: this.settings.lastOutputDir,
     });
   }
 }
