@@ -161,3 +161,18 @@
   font-size: 12px;
   color: var(--text-muted);
 }
+
+/* Off-screen host notes are rendered into before export.
+   Must stay laid out: Obsidian skips mermaid blocks with no offsetParent. */
+.rhino-render-host {
+  position: absolute;
+  left: -10000px;
+  top: 0;
+  pointer-events: none;
+  width: var(--rhino-render-width);
+}
+
+/* Measures the printable height in px inside .rhino-render-host. */
+.rhino-render-probe {
+  height: var(--rhino-render-height);
+}

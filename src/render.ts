@@ -31,6 +31,46 @@ export interface RenderAssets {
 export const NO_ASSETS: RenderAssets = { logoDataUri: "", fontFaceCss: "" };
 
 /**
+ * Page dimensions for the sizes `@page size` accepts, portrait.
+ * Only used to size the off-screen host notes are rendered into; the PDF
+ * geometry itself comes from the `@page` rule.
+ */
+const PAGE_DIMS: Record<string, { w: string; h: string }> = {
+  A3: { w: "297mm", h: "420mm" },
+  A4: { w: "210mm", h: "297mm" },
+  A5: { w: "148mm", h: "210mm" },
+  Letter: { w: "8.5in", h: "11in" },
+  Legal: { w: "8.5in", h: "14in" },
+  Tabloid: { w: "11in", h: "17in" },
+};
+
+/**
+ * The printable width of a page, as a CSS expression.
+ *
+ * Obsidian lays a mermaid diagram out against the width of the element it is
+ * rendered into, falling back to `window.innerWidth`. Giving it the width the
+ * PDF will actually offer keeps a diagram identical whatever the size of the
+ * Obsidian window at export time.
+ */
+export function printableWidthCss(theme: PdfTheme): string {
+  const dims = PAGE_DIMS[theme.pageSize] ?? PAGE_DIMS.A4;
+  const page = theme.orientation === "landscape" ? dims.h : dims.w;
+  const m = theme.margins ?? {};
+  return `calc(${page} - ${m.left || "0mm"} - ${m.right || "0mm"})`;
+}
+
+/**
+ * The printable height of a page, as a CSS expression, minus a few millimetres
+ * of slack so a rounding error cannot push an element one pixel past the break.
+ */
+export function printableHeightCss(theme: PdfTheme): string {
+  const dims = PAGE_DIMS[theme.pageSize] ?? PAGE_DIMS.A4;
+  const page = theme.orientation === "landscape" ? dims.w : dims.h;
+  const m = theme.margins ?? {};
+  return `calc(${page} - ${m.top || "0mm"} - ${m.bottom || "0mm"} - 10mm)`;
+}
+
+/**
  * Build the CSS for PDF rendering from a theme.
  */
 function buildCss(theme: PdfTheme, fontFaceCss = ""): string {
@@ -213,6 +253,46 @@ h3::before { content: counter(rh2) "." counter(rh3) " "; }
 img {
   max-width: 100%;
   height: auto;
+}
+
+/* --- Mermaid diagrams --- */
+/* Obsidian sizes most diagram types in absolute px, against a window far larger
+   than a page. The height is capped in the markup by fitMermaidDiagrams(), not
+   here: a CSS max-height confuses paged.js as badly as no cap at all. */
+.mermaid {
+  margin: 4mm 0;
+  text-align: center;
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
+.mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
+/* Fallback only: renderNoteHtml() pins the family Obsidian measured with on
+   each diagram, and that inline value wins over this one. */
+:root { --font-mermaid: ${theme.bodyFont}; }
+/* A diagram carries its own stylesheet, and its labels are HTML inside
+   <foreignObject> boxes whose size mermaid already baked into the SVG. The
+   rules below are the document's own element styles, reaching into them:
+   "p { text-align: justify }" alone is enough to stretch every label into
+   nonsense. Neutralise them without touching what mermaid itself declares. */
+.mermaid foreignObject p,
+.mermaid foreignObject ul,
+.mermaid foreignObject ol,
+.mermaid foreignObject li {
+  margin: 0;
+  padding: 0;
+  text-align: inherit;
+}
+.mermaid foreignObject code,
+.mermaid foreignObject strong,
+.mermaid foreignObject em {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  background: none;
+  padding: 0;
 }
 
 /* --- Headings --- */

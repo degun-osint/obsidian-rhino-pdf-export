@@ -252,7 +252,7 @@ export class BatchExportModal extends Modal {
     if (gen !== this.previewGen) return;
 
     const title = extractTitle(mdContent, firstFile.basename);
-    const bodyHtml = await renderNoteHtml(this.app, mdContent, firstFile.path);
+    const bodyHtml = await renderNoteHtml(this.app, mdContent, firstFile.path, theme);
     const assets = await this.assetCache.get(theme, false);
     if (gen !== this.previewGen) return;
 
@@ -371,7 +371,7 @@ export class BatchExportModal extends Modal {
       try {
         const mdContent = await this.app.vault.cachedRead(file);
         const title = extractTitle(mdContent, file.basename);
-        const bodyHtml = await renderNoteHtml(this.app, mdContent, file.path);
+        const bodyHtml = await renderNoteHtml(this.app, mdContent, file.path, theme);
 
         // A merged PDF has one stylesheet, so only the per-note page breaks can
         // vary; colors, fonts and margins come from the batch theme.

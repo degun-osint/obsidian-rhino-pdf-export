@@ -360,7 +360,12 @@ export class ExportModal extends Modal {
     const mdContent = await this.app.vault.cachedRead(this.file);
     this.cachedFrontmatter = this.app.metadataCache.getFileCache(this.file)?.frontmatter ?? {};
     this.cachedTitle = extractTitle(mdContent, this.file.basename);
-    this.cachedBodyHtml = await renderNoteHtml(this.app, mdContent, this.file.path);
+    this.cachedBodyHtml = await renderNoteHtml(
+      this.app,
+      mdContent,
+      this.file.path,
+      this.getEffectiveTheme()
+    );
   }
 
   /** Coalesce keystrokes: each one used to rerun paged.js on a fresh webview. */
