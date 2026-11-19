@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Theme option **Link color** (`linkColor`) for links in the note body, settable
   in the theme editor and per note via the `rhino-pdf` frontmatter block. Empty
   (the default, also for existing themes) keeps the previous rendering.
+- Unit tests (`npm test`, node:test + tsx) for frontmatter validation, theme
+  resolution, builtin themes and CSS generation, including link-color regression
+  coverage; CI runs tests, type checks and builds on pull requests and main,
+  and the release workflow runs tests before building.
 
 ## [1.3.2] - 2026-07-10
 
