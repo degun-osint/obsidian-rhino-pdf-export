@@ -100,6 +100,7 @@ Add a `rhino-pdf` block in a note's frontmatter to override theme settings:
 rhino-pdf:
   theme: "Corporate Report"      # pin a theme, by name or id
   primaryColor: "#e63946"
+  linkColor: "#0969da"          # body links; empty in the theme = default
   showCover: false
   subtitle: "My subtitle"
   watermarkText: "DRAFT"

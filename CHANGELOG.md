@@ -4,6 +4,13 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Theme option **Link color** (`linkColor`) for links in the note body, settable
+  in the theme editor and per note via the `rhino-pdf` frontmatter block. Empty
+  (the default, also for existing themes) keeps the previous rendering.
+
 ## [1.3.2] - 2026-07-10
 
 ### Changed
