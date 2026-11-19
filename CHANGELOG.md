@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   coverage; CI runs tests, type checks and builds on pull requests and main,
   and the release workflow runs tests before building.
 
+### Changed
+- The export and batch export modals are wider by default (760px instead of a
+  520px cap) and resizable from the bottom-right corner. The preview fits the
+  pages to the available width and takes up any extra height, so enlarging the
+  modal enlarges the preview.
+
 ## [1.3.2] - 2026-07-10
 
 ### Changed

@@ -26,6 +26,7 @@ import {
   renderNoteHtml,
 } from "./export";
 import { createDocConfigState, renderDocConfigSection, type DocConfigState, type DocField } from "./doc-config-ui";
+import { createPreviewWebview, makeModalResizable } from "./preview";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
@@ -95,6 +96,7 @@ export class BatchExportModal extends Modal {
   onOpen() {
     const { contentEl } = this;
     contentEl.addClass("rhino-pdf-export-modal");
+    makeModalResizable(this.modalEl);
 
     const mdFiles = this.getMdFiles();
 
@@ -221,13 +223,7 @@ export class BatchExportModal extends Modal {
     const mdFiles = this.getMdFiles();
     if (mdFiles.length === 0) return;
 
-    // createEl has no key for Electron's <webview>; it is an HTMLElement at runtime.
-    const webview = createEl("webview" as "div");
-    webview.addClass("rhino-webview");
-    webview.setAttribute("webpreferences", "javascript=yes");
-    this.previewWebview = webview;
-    container.empty();
-    container.appendChild(webview);
+    this.previewWebview = createPreviewWebview(container);
     await this.updatePreview();
   }
 
