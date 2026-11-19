@@ -22,6 +22,8 @@ export interface PdfTheme {
   // Colors
   primaryColor: string;
   accentColor: string;
+  // Body link color; empty = browser default
+  linkColor: string;
 
   // Logo (relative path in vault, or empty)
   logoPath: string;

@@ -108,6 +108,30 @@ export class ThemedPdfSettingTab extends PluginSettingTab {
     return setting;
   }
 
+  /** Optional color: empty keeps the browser default, the reset button clears it. */
+  private addLinkColor(c: HTMLElement, theme: PdfTheme): Setting {
+    const setting = new Setting(c)
+      .setName("Link color")
+      .setDesc("Color of links in the note body. Reset to keep the default link color.");
+    let picker: TextComponent | null = null;
+    setting.addText((t: TextComponent) => {
+      picker = t;
+      t.inputEl.type = "color";
+      t.setValue(theme.linkColor || "#0000ee").onChange((v) => {
+        theme.linkColor = v;
+        this.save();
+      });
+    });
+    setting.addExtraButton((b) => {
+      b.setIcon("rotate-ccw").setTooltip("Reset to default").onClick(() => {
+        theme.linkColor = "";
+        picker?.setValue("#0000ee");
+        this.save();
+      });
+    });
+    return setting;
+  }
+
   private addToggle(
     c: HTMLElement,
     name: string,
@@ -281,6 +305,7 @@ export class ThemedPdfSettingTab extends PluginSettingTab {
     this.addText(containerEl, "Theme name", () => theme.name, (v) => { theme.name = v; });
     this.addColor(containerEl, "Primary color", () => theme.primaryColor, (v) => { theme.primaryColor = v; });
     this.addColor(containerEl, "Accent color", () => theme.accentColor, (v) => { theme.accentColor = v; });
+    this.addLinkColor(containerEl, theme);
     this.addText(containerEl, "Logo", () => theme.logoPath, (v) => { theme.logoPath = v.trim(); }, {
       desc: "Relative path in vault (e.g. assets/logo.png)",
       placeholder: "assets/logo.png",

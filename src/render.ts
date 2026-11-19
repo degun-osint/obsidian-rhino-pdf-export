@@ -167,6 +167,11 @@ body {
   page-break-after: always;
 }
 
+/* --- Body links (theme link color) --- */${theme.linkColor ? `
+a, a.external-link, a.internal-link {
+  color: ${theme.linkColor};
+}` : ""}
+
 /* --- External link rendering --- */
 .rhino-url {
   color: #666;
@@ -392,7 +397,11 @@ hr {
   opacity: 0.4;
 }
 
-strong { font-weight: 700; color: #1a1a1a; }
+strong { font-weight: 700; color: #1a1a1a; }${theme.linkColor ? `
+/* Formatted link labels inherit the anchor's color. */
+a strong, a code {
+  color: inherit;
+}` : ""}
 
 /* --- Callouts (Obsidian built-in + Callout Manager) --- */
 .callout {

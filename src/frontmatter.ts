@@ -14,7 +14,7 @@ type FieldSpec =
   | { kind: "text" }
   | { kind: "boolean" }
   | { kind: "number"; min: number; max: number }
-  | { kind: "color" }
+  | { kind: "color"; allowEmpty?: boolean }
   | { kind: "length" }
   | { kind: "font" }
   | { kind: "enum"; values: readonly string[] }
@@ -23,6 +23,7 @@ type FieldSpec =
 const FIELD_SPECS: Partial<Record<keyof PdfTheme, FieldSpec>> = {
   primaryColor: { kind: "color" },
   accentColor: { kind: "color" },
+  linkColor: { kind: "color", allowEmpty: true },
   logoPath: { kind: "text" },
   showCover: { kind: "boolean" },
   showToc: { kind: "boolean" },
@@ -158,6 +159,7 @@ function coerceField(spec: FieldSpec, v: unknown): unknown {
       return coerceMargins(v);
     case "color": {
       const s = coerceText(v)?.trim();
+      if (s === "" && spec.allowEmpty) return "";
       return s && COLOR_RE.test(s) ? s : null;
     }
     case "length": {

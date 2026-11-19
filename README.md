@@ -100,6 +100,7 @@ Add a `rhino-pdf` block in a note's frontmatter to override theme settings:
 rhino-pdf:
   theme: "Corporate Report"      # pin a theme, by name or id
   primaryColor: "#e63946"
+  linkColor: "#0969da"          # body links; empty in the theme = default
   showCover: false
   subtitle: "My subtitle"
   watermarkText: "DRAFT"
@@ -272,9 +273,14 @@ Settings → Rhino PDF Export:
 
 ```bash
 npm install
+npm test        # unit and regression tests
 npm run dev     # watch mode
 npm run build   # production
 ```
+
+Tests use Node's built-in test runner with tsx and cover frontmatter, theme
+resolution, and generated HTML/CSS without launching Obsidian. CI runs tests,
+type checks, and production builds on Node 20 and 24 for pull requests and main.
 
 ### Structure
 
